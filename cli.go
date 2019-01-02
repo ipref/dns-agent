@@ -16,6 +16,7 @@ var cli struct {
 	mapper_url string
 	// derived
 	zones []string
+	prog  string
 }
 
 func parse_cli() {
@@ -23,14 +24,14 @@ func parse_cli() {
 	flag.BoolVar(&cli.debug, "debug", false, "print debug information")
 	flag.StringVar(&cli.mapper_url, "m", "unix:///var/run/ipref-mapper.sock", "mapper url")
 	flag.IntVar(&cli.poll_ivl, "t", 60, "approximate transfer interval in minutes")
+	toks := strings.Split(os.Args[0], "/")
+	cli.prog = toks[len(toks)-1]
 	flag.Usage = func() {
-		toks := strings.Split(os.Args[0], "/")
-		prog := toks[len(toks)-1]
 		log.Println("DNS agent for IPREF mappers. It gathers information about published IPREF")
 		log.Println("addresses referring to hosts on local network. This information is used for")
 		log.Println("proper mapping of IPREF addresss to local network addresses.")
 		log.Println("")
-		log.Println("   ", prog, "[FLAGS] ZONE:SERVER[:PORT] ...")
+		log.Println("   ", cli.prog, "[FLAGS] ZONE:SERVER[:PORT] ...")
 		log.Println("")
 		flag.PrintDefaults()
 	}

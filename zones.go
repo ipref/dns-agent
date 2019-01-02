@@ -39,11 +39,9 @@ func poll_a_zone(zone string) {
 
 	// initial delay
 
-	dly := rand.Intn(initial_delay)
-	if cli.debug {
-		log.Printf("%v initial delay: %v secs\n", zone, dly)
-	}
-	time.Sleep(time.Duration(dly) * time.Second)
+	dly := time.Duration(rand.Intn(initial_delay)) * time.Second
+	log.Printf("%v initial delay: %v\n", zone, dly)
+	time.Sleep(dly)
 
 	// poll loop
 
@@ -76,9 +74,10 @@ func poll_a_zone(zone string) {
 		ivl := cli.poll_ivl * 60 * (100 - interval_fuzz)
 		ivl += rand.Intn(cli.poll_ivl*60*interval_fuzz) * 2
 		ivl /= 100
+		dly = time.Duration(ivl) * time.Second
 		if cli.debug {
-			log.Printf("%v poll delay: %v secs\n", zone, ivl)
+			log.Printf("%v poll delay: %v\n", zone, dly)
 		}
-		time.Sleep(time.Duration(ivl) * time.Second)
+		time.Sleep(dly)
 	}
 }

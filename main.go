@@ -43,6 +43,8 @@ func main() {
 
 	rand.Seed(time.Now().UnixNano())
 
+	log.Printf("starting %v\n", cli.prog)
+
 	for _, zone := range cli.zones {
 		go poll_a_zone(string(zone))
 	}
