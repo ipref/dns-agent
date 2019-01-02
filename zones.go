@@ -55,7 +55,7 @@ func poll_a_zone(zone string) {
 			log.Printf("ERR %v transfer failed: %v\n", zone, err)
 		} else {
 			for e := range c {
-				if e.Error != nil {
+				if e.Error != nil && cli.debug {
 					log.Printf("ERR %v envelope error: %v\n", zone, e.Error)
 				}
 				for _, rr := range e.RR {
