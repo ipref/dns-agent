@@ -32,6 +32,9 @@ func poll_a_zone(zone string) {
 		zname += "."
 	}
 
+	if len(toks) < 3 {
+		toks = append(toks, "53")
+	}
 	zsrv := strings.Join(toks[1:], ":")
 
 	// initial delay
