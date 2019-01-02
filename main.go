@@ -3,30 +3,49 @@
 package main
 
 import (
-	"fmt"
-	"github.com/miekg/dns"
+	"log"
+	"math/rand"
+	"os"
+	"os/signal"
+	"syscall"
+	"time"
 )
+
+const (
+	interval_fuzz int = 25  // poll interval variation [%]
+	initial_delay int = 300 // initial max delay [secs]
+)
+
+var goexit chan (string)
+
+func catch_signals() {
+
+	sigchan := make(chan os.Signal, 1)
+	signal.Notify(sigchan, syscall.SIGINT, syscall.SIGTERM)
+
+	sig := <-sigchan
+
+	signal.Stop(sigchan)
+	goexit <- "signal(" + sig.String() + ")"
+}
 
 func main() {
 
-	t := new(dns.Transfer)
-	m := new(dns.Msg)
-	m.SetAxfr("ipref.org.")
-	c, err := t.In(m, "ns1.dynu.com:53")
-	if err != nil {
-		fmt.Printf("transfer failed: %v\n", err)
-	}
-	for e := range c {
-		if e.Error != nil {
-			fmt.Printf("envelope error: %v\n", e.Error)
-		}
-		for _, r := range e.RR {
-			// only selected records
-			rrtype := r.Header().Rrtype
-			if rrtype == dns.TypeA || rrtype == dns.TypeTXT || rrtype == dns.TypeSOA {
-				fmt.Printf("%v\n", r)
-			}
-		}
+	log.SetFlags(0)
+	parse_cli()
 
+	if len(cli.zones) == 0 {
+		log.Fatal("no zones to poll")
 	}
+
+	goexit = make(chan string)
+	go catch_signals()
+
+	rand.Seed(time.Now().UnixNano())
+
+	for _, zone := range cli.zones {
+		go poll_a_zone(string(zone))
+	}
+
+	_ = <-goexit
 }
