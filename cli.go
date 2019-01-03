@@ -4,7 +4,6 @@ package main
 
 import (
 	"flag"
-	//	"fmt"
 	"log"
 	"os"
 	"strings"
@@ -15,8 +14,9 @@ var cli struct {
 	poll_ivl   int
 	mapper_url string
 	// derived
-	zones []string
-	prog  string
+	zones    []string
+	prog     string
+	sockname string
 }
 
 func parse_cli() {
@@ -46,5 +46,13 @@ func parse_cli() {
 	}
 	if cli.poll_ivl > 10080 {
 		cli.poll_ivl = 10080 // one week
+	}
+
+	// validate mapper url
+
+	if strings.HasPrefix(cli.mapper_url, "unix:///") {
+		cli.sockname = cli.mapper_url[7:]
+	} else {
+		log.Fatal("unsupported mapper protocol: %v", cli.mapper_url)
 	}
 }
