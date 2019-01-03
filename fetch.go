@@ -83,17 +83,18 @@ func poll_a_zone(zone string) {
 
 						// get IPREF address
 
-						toks := strings.Fields(txt)
-						if len(toks) != 2 || toks[0] != "AA" {
+						if !strings.HasPrefix(txt, "AA ") {
 							continue
 						}
-
-						addr := strings.Split(toks[1], "+") // ipref address: gw + ref
+						addr := strings.Split(txt[3:], "+")
 
 						if len(addr) != 2 {
 							log.Printf("ERR %v invalid IPREF address: %v\n", zone, toks[1])
 							continue
 						}
+
+						addr[0] = strings.TrimSpace(addr[0])
+						addr[1] = strings.TrimSpace(addr[1])
 
 						// get reference
 
