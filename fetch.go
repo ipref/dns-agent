@@ -19,10 +19,6 @@ type MapperConn struct {
 
 func poll_a_zone(zone string) {
 
-	// mapper connection
-
-	mcon := MapperConn{msgid: byte(time.Now().Unix() & 0x7f)}
-
 	// zone name and server it's hosted on
 
 	toks := strings.Split(zone, ":")
@@ -55,6 +51,8 @@ func poll_a_zone(zone string) {
 	time.Sleep(dly)
 
 	// poll loop
+
+	mcon := MapperConn{msgid: byte(rand.Intn(256))}
 
 	for {
 

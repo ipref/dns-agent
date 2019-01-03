@@ -34,12 +34,10 @@ func send_to_mapper(m *MapperConn, dnm string, gw net.IP, ref ref.Ref) error {
 
 	// header
 
+	m.msgid += 1
 	wlen := 4
 
 	msg[0] = 0x40 + MQP_INFO_AA
-	if m.msgid += 1; m.msgid == 255 {
-		m.msgid = 1
-	}
 	msg[1] = m.msgid
 	msg[2] = 0
 	msg[3] = 0
