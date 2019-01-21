@@ -12,8 +12,8 @@ import (
 )
 
 const (
-	interval_fuzz int = 25  // poll interval variation [%]
-	initial_delay int = 300 // initial max delay [secs]
+	interval_fuzz int = 29  // poll interval variation [%]
+	initial_delay int = 307 // initial max delay [s]
 )
 
 var goexit chan (string)
@@ -34,7 +34,7 @@ func main() {
 	log.SetFlags(0)
 	parse_cli()
 
-	if len(cli.zones) == 0 {
+	if len(cli.mappings) == 0 {
 		log.Fatal("no zones to poll")
 	}
 
@@ -45,8 +45,8 @@ func main() {
 
 	log.Printf("starting %v\n", cli.prog)
 
-	for _, zone := range cli.zones {
-		go poll_a_zone(string(zone))
+	for _, mapping := range cli.mappings {
+		go poll_a_zone(string(mapping))
 	}
 
 	_ = <-goexit

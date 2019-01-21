@@ -4,13 +4,31 @@ package main
 
 import (
 	"encoding/binary"
-	"fmt"
+	//"fmt"
 	"github.com/ipref/ref"
-	"net"
-	"time"
+	//"net"
+	//"time"
 )
 
 var be = binary.BigEndian
+
+type M32 int32   // mark, a monotonic counter
+type O32 int32   // owner id, an index into array
+type IP32 uint32 // ip address
+
+type AddrRec struct {
+	ea  IP32
+	ip  IP32
+	gw  IP32
+	ref ref.Ref
+}
+
+type ZoneData struct {
+	ipref_zone string
+	local_zone string
+	hash       []byte
+	arecs      []AddrRec
+}
 
 const (
 	MQP_PING    = 1
@@ -19,6 +37,7 @@ const (
 	MSGMAX      = 320 // 255 + 1 + 16 + 16 + 16 + 4 = 308 rounded up to 16 byte boundary
 )
 
+/*
 func send_to_mapper(m *MapperConn, dnm string, gw net.IP, ref ref.Ref) error {
 
 	if m.conn == nil {
@@ -121,3 +140,4 @@ func send_to_mapper(m *MapperConn, dnm string, gw net.IP, ref ref.Ref) error {
 
 	return nil
 }
+*/
