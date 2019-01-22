@@ -49,5 +49,6 @@ func main() {
 		go poll_a_zone(string(mapping))
 	}
 
-	_ = <-goexit
+	msg := <-goexit
+	log.Printf("exit: %v", msg)
 }

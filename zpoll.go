@@ -10,13 +10,42 @@ import (
 	"log"
 	"math/rand"
 	"net"
+	"sort"
 	"strings"
 	"time"
 )
 
 type IprefAddr struct {
-	gw  IP32
-	ref ref.Ref
+	gw   IP32
+	ref  ref.Ref
+	host string
+}
+
+type ByIpRef []IprefAddr
+
+func (arr ByIpRef) Len() int {
+	return len(arr)
+}
+
+func (arr ByIpRef) Less(i, j int) bool {
+
+	if arr[i].gw < arr[j].gw {
+		return true
+	}
+	if arr[i].gw > arr[j].gw {
+		return false
+	}
+	if arr[i].ref.H < arr[j].ref.H {
+		return true
+	}
+	if arr[i].ref.H > arr[j].ref.H {
+		return false
+	}
+	return arr[i].ref.L < arr[j].ref.L
+}
+
+func (arr ByIpRef) Swap(i, j int) {
+	arr[i], arr[j] = arr[j], arr[i]
 }
 
 func send_to_broker(mapping, local_zone, ipref_zone string, dedup map[IprefAddr]IP32) {
@@ -28,9 +57,18 @@ func send_to_broker(mapping, local_zone, ipref_zone string, dedup map[IprefAddr]
 	zdata.local_zone = local_zone
 	zdata.ipref_zone = ipref_zone
 
-	for ipref_addr, ip := range dedup {
+	keys := make([]IprefAddr, 0, len(dedup))
+	for key := range dedup {
+		keys = append(keys, key)
+	}
 
-		arec := AddrRec{0, ip, ipref_addr.gw, ipref_addr.ref}
+	sort.Sort(ByIpRef(keys)) // sort keys to make hash meaningful
+
+	for _, ipref_addr := range keys {
+
+		ip := dedup[ipref_addr]
+
+		arec := AddrRec{0, ip, ipref_addr.gw, ipref_addr.ref, ipref_addr.host}
 		zdata.arecs = append(zdata.arecs, arec)
 
 		be.PutUint32(buf[:4], uint32(arec.ea))
@@ -51,9 +89,9 @@ func send_to_broker(mapping, local_zone, ipref_zone string, dedup map[IprefAddr]
 
 		var sb strings.Builder
 
-		fmt.Fprintf(&sb, "%v  num records: %v  hash: 02x\n", mapping, zdata.hash)
+		fmt.Fprintf(&sb, "%v  found(%v)  hash: %02x\n", mapping, len(zdata.arecs), zdata.hash)
 		for _, arec := range zdata.arecs {
-			fmt.Fprintf(&sb, "    %v  =  %v + %v", arec.ip, arec.gw, arec.ref)
+			fmt.Fprintf(&sb, "    %-12v  %-16v  =  %-16v +  %v\n", arec.host, arec.ip, arec.gw, &arec.ref)
 		}
 		log.Printf(sb.String())
 	}
@@ -172,7 +210,8 @@ func poll_a_zone(mapping string) {
 
 						// find ip
 
-						lhost := hdr.Name + "." + local_zone
+						host := strings.Split(hdr.Name, ".")[0]
+						lhost := host + "." + local_zone
 						laddrs, err := net.LookupHost(lhost)
 						if err != nil || len(laddrs) == 0 {
 							log.Printf("ERR %v cannot resolve IP of local host: %v\n", mapping, lhost)
@@ -186,13 +225,13 @@ func poll_a_zone(mapping string) {
 
 						// save unique
 
-						ipref_addr := IprefAddr{IP32(be.Uint32(gw)), ref}
+						ipref_addr := IprefAddr{IP32(be.Uint32(gw)), ref, host}
 
 						_, ok := dedup[ipref_addr]
 						if ok {
 							log.Printf("%v duplicate ipref mapping: %v = %v + %v, discarding", mapping, ip, gw, ref)
 						} else {
-							dedup[ipref_addr] = IP32(be.Uint32(ip))
+							dedup[ipref_addr] = IP32(be.Uint32(ip.To4()))
 						}
 					}
 				}

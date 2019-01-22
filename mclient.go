@@ -6,7 +6,7 @@ import (
 	"encoding/binary"
 	//"fmt"
 	"github.com/ipref/ref"
-	//"net"
+	"net"
 	//"time"
 )
 
@@ -17,10 +17,11 @@ type O32 int32   // owner id, an index into array
 type IP32 uint32 // ip address
 
 type AddrRec struct {
-	ea  IP32
-	ip  IP32
-	gw  IP32
-	ref ref.Ref
+	ea   IP32
+	ip   IP32
+	gw   IP32
+	ref  ref.Ref
+	host string
 }
 
 type ZoneData struct {
@@ -36,6 +37,12 @@ const (
 	MQP_INFO_AA = 3
 	MSGMAX      = 320 // 255 + 1 + 16 + 16 + 16 + 4 = 308 rounded up to 16 byte boundary
 )
+
+func (ip IP32) String() string {
+	addr := []byte{0, 0, 0, 0}
+	be.PutUint32(addr, uint32(ip))
+	return net.IP(addr).String()
+}
 
 /*
 func send_to_mapper(m *MapperConn, dnm string, gw net.IP, ref ref.Ref) error {
