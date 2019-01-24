@@ -7,6 +7,7 @@ import (
 	"math/rand"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 )
@@ -32,7 +33,13 @@ func catch_signals() {
 func main() {
 
 	log.SetFlags(0)
-	parse_cli()
+
+	toks := strings.Split(os.Args[0], "/")
+	prog := toks[len(toks)-1]
+
+	log.Printf("starting %v\n", prog)
+
+	parse_cli(prog)
 
 	if len(cli.mappings) == 0 {
 		log.Fatal("no zones to poll")
@@ -43,7 +50,7 @@ func main() {
 
 	rand.Seed(time.Now().UnixNano())
 
-	log.Printf("starting %v\n", cli.prog)
+	go broker()
 
 	for _, mapping := range cli.mappings {
 		go poll_a_zone(string(mapping))
