@@ -41,16 +41,16 @@ type ZoneStatus struct {
 
 var zdq chan (*ZoneData)
 
-func new_zone_data(statmap map[string]ZoneStatus, newdata *ZoneData) {
+func new_zone_data(statmap map[string]*ZoneStatus, newdata *ZoneData) {
 
 	stat, ok := statmap[newdata.ipref_zone]
 
 	// initialize zone status
 
 	if !ok {
-		if cli.debug {
-			log.Printf("%v:%v new zone", newdata.local_zone, newdata.ipref_zone)
-		}
+		log.Printf("%v:%v new zone", newdata.local_zone, newdata.ipref_zone)
+		stat = new(ZoneStatus)
+		statmap[newdata.ipref_zone] = stat
 		stat.send.data = new(ZoneData)
 		stat.last.data = new(ZoneData)
 	}
@@ -58,9 +58,7 @@ func new_zone_data(statmap map[string]ZoneStatus, newdata *ZoneData) {
 	// determine if zone data is new
 
 	if !bytes.Equal(stat.last.data.hash, newdata.hash) {
-		if cli.debug {
-			log.Printf("%v:%v %02x: new data", newdata.local_zone, newdata.ipref_zone, newdata.hash)
-		}
+		log.Printf("%v:%v %02x: new data", newdata.local_zone, newdata.ipref_zone, newdata.hash)
 		stat.last.data = newdata
 		stat.last.count = 0
 	}
@@ -73,7 +71,7 @@ func new_zone_data(statmap map[string]ZoneStatus, newdata *ZoneData) {
 		return // already sent
 	}
 
-	stat.last.count = +1
+	stat.last.count += 1
 
 	if stat.last.count < ACCEPT_COUNT {
 		if cli.debug {
@@ -87,11 +85,13 @@ func new_zone_data(statmap map[string]ZoneStatus, newdata *ZoneData) {
 
 	log.Printf("%v:%v %02x: count(%v) sending to mapper", stat.last.data.local_zone,
 		stat.last.data.ipref_zone, stat.last.data.hash, stat.last.count)
+
+	stat.send.data = stat.last.data
 }
 
 func broker() {
 
-	statmap := make(map[string]ZoneStatus)
+	statmap := make(map[string]*ZoneStatus)
 
 	for {
 
