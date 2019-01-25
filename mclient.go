@@ -37,7 +37,7 @@ type ZoneData struct {
 	arecs      []AddrRec
 }
 
-func (zd *ZoneData) mapping() string {
+func (zd *ZoneData) sig() string {
 	return strings.TrimRight(zd.local_zone, ".") + ":" + strings.TrimRight(zd.ipref_zone, ".")
 }
 
