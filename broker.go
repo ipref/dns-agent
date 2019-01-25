@@ -85,10 +85,8 @@ func new_zone_data(statmap map[string]ZoneStatus, newdata *ZoneData) {
 
 	// send new data to mapper
 
-	if cli.debug {
-		log.Printf("%v:%v %02x: count(%v) sending to mapper", stat.last.data.local_zone,
-			stat.last.data.ipref_zone, stat.last.data.hash, stat.last.count)
-	}
+	log.Printf("%v:%v %02x: count(%v) sending to mapper", stat.last.data.local_zone,
+		stat.last.data.ipref_zone, stat.last.data.hash, stat.last.count)
 }
 
 func broker() {
