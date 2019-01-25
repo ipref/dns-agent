@@ -50,6 +50,8 @@ func main() {
 
 	rand.Seed(time.Now().UnixNano())
 
+	zdq = make(chan *ZoneData, ZDQLEN)
+
 	go broker()
 
 	for _, mapping := range cli.mappings {
