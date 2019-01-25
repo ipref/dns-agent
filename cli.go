@@ -9,9 +9,10 @@ import (
 )
 
 var cli struct {
-	debug      bool
-	poll_ivl   int // [min]
-	mapper_url string
+	debug        bool
+	poll_ivl     int // [min]
+	accept_count int
+	mapper_url   string
 	// derived
 	mappings []string
 	sockname string
@@ -22,6 +23,7 @@ func parse_cli(prog string) {
 	flag.BoolVar(&cli.debug, "debug", false, "print debug information")
 	flag.StringVar(&cli.mapper_url, "m", "unix:///var/run/ipref-mapper.sock", "mapper url")
 	flag.IntVar(&cli.poll_ivl, "t", 59, "approximate transfer interval in minutes")
+	flag.IntVar(&cli.accept_count, "c", 2, "accept count")
 	flag.Usage = func() {
 		log.Println("DNS agent for IPREF mappers. It gathers information about published IPREF")
 		log.Println("addresses referring to hosts on local network. This information is used for")
@@ -42,6 +44,12 @@ func parse_cli(prog string) {
 	}
 	if cli.poll_ivl > 10080 {
 		cli.poll_ivl = 10080 // one week
+	}
+
+	// validate accept count
+
+	if cli.accept_count < 1 {
+		cli.accept_count = 1
 	}
 
 	// validate mapper url

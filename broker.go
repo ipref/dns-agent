@@ -20,8 +20,7 @@ of mapper's data record time out), it resends the data to the mapper.
 */
 
 const (
-	ZDQLEN       = 2
-	ACCEPT_COUNT = 2
+	ZDQLEN = 2
 )
 
 type ZoneStatus struct {
@@ -72,11 +71,8 @@ func new_zone_data(statmap map[string]*ZoneStatus, newdata *ZoneData) {
 
 	stat.last.count += 1
 
-	if stat.last.count < ACCEPT_COUNT {
-		if cli.debug {
-			log.Printf("%v %02x: count(%v)", stat.last.data.sig(),
-				stat.last.data.hash, stat.last.count)
-		}
+	if stat.last.count < cli.accept_count {
+		log.Printf("%v %02x: count(%v)", stat.last.data.sig(), stat.last.data.hash, stat.last.count)
 		return // didn't reach accept count
 	}
 
