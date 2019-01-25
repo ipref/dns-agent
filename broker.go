@@ -48,7 +48,7 @@ func new_zone_data(statmap map[string]*ZoneStatus, newdata *ZoneData) {
 	// initialize zone status
 
 	if !ok {
-		log.Printf("%v:%v new zone", newdata.local_zone, newdata.ipref_zone)
+		log.Printf("%v new zone", newdata.mapping())
 		stat = new(ZoneStatus)
 		statmap[newdata.ipref_zone] = stat
 		stat.send.data = new(ZoneData)
@@ -58,15 +58,14 @@ func new_zone_data(statmap map[string]*ZoneStatus, newdata *ZoneData) {
 	// determine if zone data is new
 
 	if !bytes.Equal(stat.last.data.hash, newdata.hash) {
-		log.Printf("%v:%v %02x: new data", newdata.local_zone, newdata.ipref_zone, newdata.hash)
+		log.Printf("%v %02x: new data", newdata.mapping(), newdata.hash)
 		stat.last.data = newdata
 		stat.last.count = 0
 	}
 
 	if bytes.Equal(stat.send.data.hash, stat.last.data.hash) {
 		if cli.debug {
-			log.Printf("%v:%v %02x: already sent", stat.last.data.local_zone,
-				stat.last.data.ipref_zone, stat.last.data.hash)
+			log.Printf("%v %02x: already sent", stat.last.data.mapping(), stat.last.data.hash)
 		}
 		return // already sent
 	}
@@ -75,16 +74,16 @@ func new_zone_data(statmap map[string]*ZoneStatus, newdata *ZoneData) {
 
 	if stat.last.count < ACCEPT_COUNT {
 		if cli.debug {
-			log.Printf("%v:%v %02x: count(%v)", stat.last.data.local_zone,
-				stat.last.data.ipref_zone, stat.last.data.hash, stat.last.count)
+			log.Printf("%v %02x: count(%v)", stat.last.data.mapping(),
+				stat.last.data.hash, stat.last.count)
 		}
 		return // didn't reach accept count
 	}
 
 	// send new data to mapper
 
-	log.Printf("%v:%v %02x: count(%v) sending to mapper", stat.last.data.local_zone,
-		stat.last.data.ipref_zone, stat.last.data.hash, stat.last.count)
+	log.Printf("%v %02x: count(%v) sending to mapper", stat.last.data.mapping(),
+		stat.last.data.hash, stat.last.count)
 
 	stat.send.data = stat.last.data
 }

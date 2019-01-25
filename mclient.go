@@ -4,10 +4,16 @@ package main
 
 import (
 	"encoding/binary"
-	//"fmt"
 	"github.com/ipref/ref"
 	"net"
-	//"time"
+	"strings"
+)
+
+const (
+	MQP_PING    = 1
+	MQP_MAP_EA  = 2
+	MQP_INFO_AA = 3
+	MSGMAX      = 320 // 255 + 1 + 16 + 16 + 16 + 4 = 308 rounded up to 16 byte boundary
 )
 
 var be = binary.BigEndian
@@ -31,12 +37,9 @@ type ZoneData struct {
 	arecs      []AddrRec
 }
 
-const (
-	MQP_PING    = 1
-	MQP_MAP_EA  = 2
-	MQP_INFO_AA = 3
-	MSGMAX      = 320 // 255 + 1 + 16 + 16 + 16 + 4 = 308 rounded up to 16 byte boundary
-)
+func (zd *ZoneData) mapping() string {
+	return strings.TrimRight(zd.local_zone, ".") + ":" + strings.TrimRight(zd.ipref_zone, ".")
+}
 
 func (ip IP32) String() string {
 	addr := []byte{0, 0, 0, 0}
