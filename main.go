@@ -37,9 +37,9 @@ func main() {
 	toks := strings.Split(os.Args[0], "/")
 	prog := toks[len(toks)-1]
 
-	log.Printf("starting %v\n", prog)
-
 	parse_cli(prog)
+
+	log.Printf("starting %v\n", prog)
 
 	if len(cli.mappings) == 0 {
 		log.Fatal("no zones to poll")
