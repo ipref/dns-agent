@@ -101,35 +101,13 @@ func send_to_broker(local_zone, ipref_zone, server string, dedup map[IprefAddr]I
 
 func poll_a_zone(mapping string) {
 
-	// LOCAL:ZONE:SERVER[:PORT]
+	// LOCAL:PUBLIC:SERVER:PORT
 
-	toks := strings.Split(mapping, ":")
-
-	if len(toks) < 3 || len(toks) > 4 {
-		log.Printf("ERR invalid zone mapping: %v", mapping)
-		return
-	}
+	toks := strings.SplitN(mapping, ":", 3)
 
 	local_zone := toks[0]
 	ipref_zone := toks[1]
-
-	if len(local_zone) == 0 || len(ipref_zone) == 0 {
-		log.Printf("ERR missing zone name: %v", mapping)
-		return
-	}
-
-	if local_zone[len(local_zone)-1:] != "." {
-		local_zone += "."
-	}
-
-	if ipref_zone[len(ipref_zone)-1:] != "." {
-		ipref_zone += "."
-	}
-
-	if len(toks) < 4 {
-		toks = append(toks, "53")
-	}
-	server := strings.Join(toks[2:], ":")
+	server := toks[2]
 
 	// initial delay
 
