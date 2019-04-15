@@ -3,7 +3,6 @@
 package main
 
 import (
-	"bytes"
 	"log"
 )
 
@@ -56,15 +55,15 @@ func new_zone_data(statmap map[string]*ZoneStatus, newdata *ZoneData) {
 
 	// determine if zone data is new
 
-	if !bytes.Equal(stat.last.data.hash, newdata.hash) {
-		log.Printf("%v %02x: new data", newdata.sig(), newdata.hash)
+	if stat.last.data.hash != newdata.hash {
+		log.Printf("%v %016x: new data", newdata.sig(), newdata.hash)
 		stat.last.data = newdata
 		stat.last.count = 0
 	}
 
-	if bytes.Equal(stat.send.data.hash, stat.last.data.hash) {
+	if stat.send.data.hash == stat.last.data.hash {
 		if cli.debug {
-			log.Printf("%v %02x: already sent", stat.last.data.sig(), stat.last.data.hash)
+			log.Printf("%v %016x: already sent", stat.last.data.sig(), stat.last.data.hash)
 		}
 		return // already sent
 	}
@@ -72,13 +71,13 @@ func new_zone_data(statmap map[string]*ZoneStatus, newdata *ZoneData) {
 	stat.last.count += 1
 
 	if stat.last.count < cli.accept_count {
-		log.Printf("%v %02x: count(%v)", stat.last.data.sig(), stat.last.data.hash, stat.last.count)
+		log.Printf("%v %016x: count(%v)", stat.last.data.sig(), stat.last.data.hash, stat.last.count)
 		return // didn't reach accept count
 	}
 
 	// send new data to mapper
 
-	log.Printf("%v %02x: count(%v) sending to mapper", stat.last.data.sig(),
+	log.Printf("%v %016x: count(%v) sending to mapper", stat.last.data.sig(),
 		stat.last.data.hash, stat.last.count)
 
 	stat.send.data = stat.last.data

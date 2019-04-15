@@ -3,10 +3,10 @@
 package main
 
 import (
-	"crypto/md5"
 	"fmt"
 	"github.com/ipref/ref"
 	"github.com/miekg/dns"
+	"hash/fnv"
 	"log"
 	"math/rand"
 	"net"
@@ -51,7 +51,7 @@ func (arr ByIpRef) Swap(i, j int) {
 func send_to_broker(local_zone, ipref_zone, server string, dedup map[IprefAddr]IP32) {
 
 	buf := make([]byte, 8, 8)
-	hash := md5.New()
+	hash := fnv.New64a()
 
 	data := new(ZoneData)
 	data.local_zone = local_zone
@@ -83,13 +83,13 @@ func send_to_broker(local_zone, ipref_zone, server string, dedup map[IprefAddr]I
 		hash.Write(buf)
 	}
 
-	data.hash = hash.Sum(nil)
+	data.hash = hash.Sum64()
 
 	if cli.debug { // pretty print results
 
 		var sb strings.Builder
 
-		fmt.Fprintf(&sb, "%v %v found(%v) hash: %02x\n", data.sig(), server, len(data.arecs), data.hash)
+		fmt.Fprintf(&sb, "%v %v found(%v) hash: %016x\n", data.sig(), server, len(data.arecs), data.hash)
 		for _, arec := range data.arecs {
 			fmt.Fprintf(&sb, "    %-12v  %-16v  =  %-16v +  %v\n", arec.host, arec.ip, arec.gw, &arec.ref)
 		}

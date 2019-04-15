@@ -33,7 +33,7 @@ type AddrRec struct {
 type ZoneData struct {
 	ipref_zone string
 	local_zone string
-	hash       []byte
+	hash       uint64
 	arecs      []AddrRec
 }
 
