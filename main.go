@@ -46,39 +46,39 @@ func main() {
 
 	rand.Seed(time.Now().UnixNano())
 
-	dataq = make(chan *ZoneData, ZDQLEN)
+	mdataq = make(chan *MapData, MDATAQLEN)
 
 	go broker()
 
-	// determine zones to poll
+	// determine sources to poll
 
-	zones := make(map[string]bool)
+	specs := make(map[string]bool)
 
-	for _, mapping := range cli.mappings {
+	for _, spec := range cli.specs {
 
 		// LOCAL:PUBLIC:SERVER[:PORT],SERVER[:PORT]
 
-		toks := strings.SplitN(mapping, ":", 3)
+		toks := strings.SplitN(spec, ":", 3)
 
 		if len(toks) < 3 {
-			log.Printf("ERR invalid mapping: %v", mapping)
+			log.Printf("ERR invalid source specification: %v", spec)
 			continue
 		}
 
-		local_zone := toks[0]
-		ipref_zone := toks[1]
+		local_domain := toks[0]
+		ipref_domain := toks[1]
 
-		if len(local_zone) == 0 || len(ipref_zone) == 0 {
-			log.Printf("ERR missing local or public domain: %v", mapping)
+		if len(local_domain) == 0 || len(ipref_domain) == 0 {
+			log.Printf("ERR missing local or public domain: %v", spec)
 			continue
 		}
 
-		if local_zone[len(local_zone)-1:] != "." {
-			local_zone += "."
+		if local_domain[len(local_domain)-1:] != "." {
+			local_domain += "."
 		}
 
-		if ipref_zone[len(ipref_zone)-1:] != "." {
-			ipref_zone += "."
+		if ipref_domain[len(ipref_domain)-1:] != "." {
+			ipref_domain += "."
 		}
 
 		for _, server := range strings.Split(toks[2], ",") {
@@ -87,21 +87,20 @@ func main() {
 				server = server + ":53"
 			}
 
-			zones[local_zone+":"+ipref_zone+":"+server] = true
+			specs[local_domain+":"+ipref_domain+":"+server] = true
 		}
-
 	}
 
-	// poll listed zones
+	// poll data sources
 
-	if len(zones) > 0 {
-		for zone, _ := range zones {
-			go poll_a_zone(zone)
+	if len(specs) > 0 {
+		for spec, _ := range specs {
+			go poll_a_source(spec)
 		}
 	} else {
-		goexit <- "no valid mappings"
+		goexit <- "no valid source specifications"
 	}
 
 	msg := <-goexit
-	log.Printf("exit: %v", msg)
+	log.Printf("exiting %v: %v", prog, msg)
 }

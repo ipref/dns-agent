@@ -3,95 +3,117 @@
 package main
 
 import (
+	"encoding/binary"
+	"github.com/ipref/ref"
 	"log"
+	"net"
 )
 
 /* Broker operations
 
-The broker counts the number of consecutive data signaled from each ipref
-zone. If the count reaches designated value (typically 2), it sends the data
-to the mapper unless the same data has already been sent.
-
-The broker requests time marks from mapper on regular basis. This is used to
-age sent data. After the time mark reaches designated value (typically half
-of mapper's data record time out), it resends the data to the mapper.
+The broker consolidates data from different DNS servers to a single set per
+each combination of local domain and ipref domain. It counts the number of
+consecutive data signaled from servers. If the count reaches designated value,
+typically 2, it marks the data as current. This is the data that is advertized
+to the mapper.
 
 */
 
 const (
-	ZDQLEN = 2
+	MDATAQLEN = 2
 )
 
-type ZoneStatus struct {
-	//
-	send struct {
-		data   *ZoneData
-		id     uint16
-		status int
-		mark   M32
-	}
+type M32 int32 // mark, stamp/counter provided by the mapper
+type O32 int32 // id associated with source, provided by the mapper
 
-	last struct {
-		data  *ZoneData
-		count int
-	}
+type IP32 uint32 // ip address
+
+func (ip IP32) String() string {
+	addr := []byte{0, 0, 0, 0}
+	be.PutUint32(addr, uint32(ip))
+	return net.IP(addr).String()
 }
 
-var dataq chan (*ZoneData)
+type AddrRec struct {
+	ea   IP32
+	ip   IP32
+	gw   IP32
+	ref  ref.Ref
+	host string
+}
 
-func new_zone_data(statmap map[string]*ZoneStatus, newdata *ZoneData) {
+type MapData struct {
+	local_domain string
+	ipref_domain string
+	source       string
+	hash         uint64
+	arecs        []AddrRec
+}
 
-	stat, ok := statmap[newdata.ipref_zone]
+type MapStatus struct {
+	current *MapData
+	last    *MapData
+	count   int
+}
 
-	// initialize zone status
+var be = binary.BigEndian
+
+var mstat map[string]*MapStatus
+var mdataq chan (*MapData)
+
+func new_mdata(newdata *MapData) {
+
+	stat, ok := mstat[newdata.source]
+
+	// initialize map status
 
 	if !ok {
-		log.Printf("%v new zone", newdata.sig())
-		stat = new(ZoneStatus)
-		statmap[newdata.ipref_zone] = stat
-		stat.send.data = new(ZoneData)
-		stat.last.data = new(ZoneData)
+		log.Printf("%v new data source", newdata.source)
+		stat = new(MapStatus)
+		mstat[newdata.source] = stat
+		stat.current = new(MapData)
+		stat.last = new(MapData)
 	}
 
-	// determine if zone data is new
+	// determine if data is new
 
-	if stat.last.data.hash != newdata.hash {
-		log.Printf("%v %016x: new data", newdata.sig(), newdata.hash)
-		stat.last.data = newdata
-		stat.last.count = 0
+	if stat.last.hash != newdata.hash {
+		log.Printf("%v %016x: new data", newdata.source, newdata.hash)
+		stat.last = newdata
+		stat.count = 0
 	}
 
-	if stat.send.data.hash == stat.last.data.hash {
+	if stat.current.hash == stat.last.hash {
 		if cli.debug {
-			log.Printf("%v %016x: already sent", stat.last.data.sig(), stat.last.data.hash)
+			log.Printf("%v %016x: same as current", stat.last.source, stat.last.hash)
 		}
-		return // already sent
+		return // same as current
 	}
 
-	stat.last.count += 1
+	stat.count += 1
 
-	if stat.last.count < cli.accept_count {
-		log.Printf("%v %016x: count(%v)", stat.last.data.sig(), stat.last.data.hash, stat.last.count)
+	if stat.count < cli.accept_count {
+		log.Printf("%v %016x: count(%v)", stat.last.source, stat.last.hash, stat.count)
 		return // didn't reach accept count
 	}
 
-	// send new data to mapper
+	// advertize new data to mapper
 
-	log.Printf("%v %016x: count(%v) sending to mapper", stat.last.data.sig(),
-		stat.last.data.hash, stat.last.count)
+	log.Printf("%v %016x: count(%v) advertizing to mapper", stat.last.source,
+		stat.last.hash, stat.count)
 
-	stat.send.data = stat.last.data
+	stat.current = stat.last
 }
 
 func broker() {
 
-	statmap := make(map[string]*ZoneStatus)
+	mstat = make(map[string]*MapStatus)
 
 	for {
 
 		select {
-		case newdata := <-dataq:
-			new_zone_data(statmap, newdata)
+		case mdata := <-mdataq:
+			new_mdata(mdata)
 		}
 	}
 }

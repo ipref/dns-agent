@@ -14,7 +14,7 @@ var cli struct {
 	accept_count int
 	mapper_url   string
 	// derived
-	mappings []string
+	specs    []string
 	sockname string
 }
 
@@ -55,16 +55,16 @@ func parse_cli(prog string) {
 		log.Println("")
 		log.Println("  ", prog, "example.org:example.com:ns1.example.net,ns2.example.net")
 		log.Println("")
-		log.Println("Hosts listed with example.org and example.com are matched")
-		log.Println("where example.org lists local IP addresses and example.com")
-		log.Println("lists equivalent public IPREF addresses. Domain example.com")
-		log.Println("is hosted on two servers for redundancy: ns1.example.net and")
-		log.Println("ns2.example.net.")
+		log.Println("In this example, hosts on local network publish their private")
+		log.Println("IP addresses at locally accessible domain example.org. The")
+		log.Println("same hosts publish their public IPREF addresses at publicly")
+		log.Println("accessible domain example.com which is hosted on two servers:")
+		log.Println("ns1.example.net and ns2.example.net.")
 		log.Println("")
 	}
 	flag.Parse()
 
-	cli.mappings = flag.Args()
+	cli.specs = flag.Args()
 
 	// validate poll interval
 

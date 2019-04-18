@@ -48,14 +48,15 @@ func (arr ByIpRef) Swap(i, j int) {
 	arr[i], arr[j] = arr[j], arr[i]
 }
 
-func send_to_broker(local_zone, ipref_zone, server string, dedup map[IprefAddr]IP32) {
+func send_to_broker(local_domain, ipref_domain, source, server string, dedup map[IprefAddr]IP32) {
 
 	buf := make([]byte, 8, 8)
 	hash := fnv.New64a()
 
-	data := new(ZoneData)
-	data.local_zone = local_zone
-	data.ipref_zone = ipref_zone
+	data := new(MapData)
+	data.local_domain = local_domain
+	data.ipref_domain = ipref_domain
+	data.source = source
 
 	keys := make([]IprefAddr, 0, len(dedup))
 	for key := range dedup {
@@ -89,29 +90,30 @@ func send_to_broker(local_zone, ipref_zone, server string, dedup map[IprefAddr]I
 
 		var sb strings.Builder
 
-		fmt.Fprintf(&sb, "%v %v found(%v) hash: %016x\n", data.sig(), server, len(data.arecs), data.hash)
+		fmt.Fprintf(&sb, "%v %v found(%v) hash: %016x\n", source, server, len(data.arecs), data.hash)
 		for _, arec := range data.arecs {
 			fmt.Fprintf(&sb, "    %-12v  %-16v  =  %-16v +  %v\n", arec.host, arec.ip, arec.gw, &arec.ref)
 		}
 		log.Printf(sb.String())
 	}
 
-	dataq <- data
+	mdataq <- data
 }
 
-func poll_a_zone(mapping string) {
+func poll_a_source(spec string) {
 
 	// LOCAL:PUBLIC:SERVER:PORT
 
-	toks := strings.SplitN(mapping, ":", 3)
+	toks := strings.SplitN(spec, ":", 3)
 
-	local_zone := toks[0]
-	ipref_zone := toks[1]
+	local_domain := toks[0]
+	ipref_domain := toks[1]
 	server := toks[2]
+
+	source := strings.TrimRight(local_domain, ".") + ":" + strings.TrimRight(ipref_domain, ".")
 
 	// initial delay
 
-	sig := strings.TrimRight(local_zone, ".") + ":" + strings.TrimRight(ipref_zone, ".")
 	dly := time.Duration(rand.Intn(initial_delay)) * time.Second
 
 poll_loop:
@@ -121,7 +123,7 @@ poll_loop:
 		// random delay
 
 		if cli.debug {
-			log.Printf("%v %v poll delay: %v\n", sig, server, dly)
+			log.Printf("%v %v poll delay: %v\n", source, server, dly)
 		}
 		time.Sleep(dly)
 
@@ -130,17 +132,17 @@ poll_loop:
 		ivl /= 100
 		dly = time.Duration(ivl) * time.Second
 
-		// get zone data
+		// get domain data
 
 		dedup := make(map[IprefAddr]IP32)
 
 		t := new(dns.Transfer)
 		m := new(dns.Msg)
-		m.SetAxfr(ipref_zone)
+		m.SetAxfr(ipref_domain)
 		c, err := t.In(m, server)
 
 		if err != nil {
-			log.Printf("%v %v ERR transfer failed: %v", sig, server, err)
+			log.Printf("%v %v ERR transfer failed: %v", source, server, err)
 			continue
 		}
 
@@ -151,12 +153,12 @@ poll_loop:
 				errmsg := e.Error.Error()
 
 				if errmsg != "dns: no SOA" {
-					log.Printf("%v %v ERR envelope error: %v", sig, server, errmsg)
+					log.Printf("%v %v ERR envelope error: %v", source, server, errmsg)
 					continue poll_loop
 				}
 
 				if cli.debug {
-					log.Printf("%v %v envelope: %v", sig, server, errmsg)
+					log.Printf("%v %v envelope: %v", source, server, errmsg)
 				}
 			}
 
@@ -180,7 +182,7 @@ poll_loop:
 					addr := strings.Split(txt[3:], "+")
 
 					if len(addr) != 2 {
-						log.Printf("%v %v ERR invalid IPREF address: %v, discarding", sig, server, txt[3:])
+						log.Printf("%v %v ERR invalid IPREF address: %v, discarding", source, server, txt[3:])
 						continue
 					}
 
@@ -191,7 +193,7 @@ poll_loop:
 
 					ref, err := ref.Parse(addr[1])
 					if err != nil {
-						log.Printf("%v %v ERR invalid IPREF reference: %v %v, discarding", sig, server, addr[1], err)
+						log.Printf("%v %v ERR invalid IPREF reference: %v %v, discarding", source, server, addr[1], err)
 						continue
 					}
 
@@ -203,13 +205,13 @@ poll_loop:
 
 						addrs, err := net.LookupHost(addr[0])
 						if err != nil || len(addrs) == 0 {
-							log.Printf("%v %v ERR cannot resolve IPREF address portion: %v, discarding", sig, server, err)
+							log.Printf("%v %v ERR cannot resolve IPREF address portion: %v, discarding", source, server, err)
 							continue
 						}
 
 						gw = net.ParseIP(addrs[0]) // use first address for now
 						if gw == nil {
-							log.Printf("%v %v ERR invalid IPREF address portion: %v, discarding", sig, server, addrs[0])
+							log.Printf("%v %v ERR invalid IPREF address portion: %v, discarding", source, server, addrs[0])
 							continue
 						}
 					}
@@ -219,16 +221,16 @@ poll_loop:
 					// find ip
 
 					host := strings.Split(hdr.Name, ".")[0]
-					lhost := host + "." + local_zone
+					lhost := host + "." + local_domain
 					laddrs, err := net.LookupHost(lhost)
 					if err != nil || len(laddrs) == 0 {
-						log.Printf("%v %v ERR cannot resolve IP address of local host: %v, discarding", sig, server, lhost)
+						log.Printf("%v %v ERR cannot resolve IP address of local host: %v, discarding", source, server, lhost)
 						continue
 					}
 
 					ip := net.ParseIP(laddrs[0]) // use first address for now
 					if ip == nil {
-						log.Printf("%v %v ERR invalid local host IP address: %v, discarding", sig, server, laddrs[0])
+						log.Printf("%v %v ERR invalid local host IP address: %v, discarding", source, server, laddrs[0])
 						continue
 					}
 
@@ -238,7 +240,7 @@ poll_loop:
 
 					_, ok := dedup[ipref_addr]
 					if ok {
-						log.Printf("%v %v duplicate ipref mapping: %v = %v + %v", sig, server, ip, gw, ref)
+						log.Printf("%v %v duplicate ipref mapping: %v = %v + %v", source, server, ip, gw, ref)
 					} else {
 						dedup[ipref_addr] = IP32(be.Uint32(ip.To4()))
 					}
@@ -246,6 +248,6 @@ poll_loop:
 			}
 		}
 
-		send_to_broker(local_zone, ipref_zone, server, dedup)
+		send_to_broker(local_domain, ipref_domain, source, server, dedup)
 	}
 }

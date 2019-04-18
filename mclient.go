@@ -2,50 +2,12 @@
 
 package main
 
-import (
-	"encoding/binary"
-	"github.com/ipref/ref"
-	"net"
-	"strings"
-)
-
 const (
 	MQP_PING    = 1
 	MQP_MAP_EA  = 2
 	MQP_INFO_AA = 3
 	MSGMAX      = 320 // 255 + 1 + 16 + 16 + 16 + 4 = 308 rounded up to 16 byte boundary
 )
-
-var be = binary.BigEndian
-
-type M32 int32   // mark, a monotonic counter
-type O32 int32   // owner id, an index into array
-type IP32 uint32 // ip address
-
-type AddrRec struct {
-	ea   IP32
-	ip   IP32
-	gw   IP32
-	ref  ref.Ref
-	host string
-}
-
-type ZoneData struct {
-	ipref_zone string
-	local_zone string
-	hash       uint64
-	arecs      []AddrRec
-}
-
-func (zd *ZoneData) sig() string {
-	return strings.TrimRight(zd.local_zone, ".") + ":" + strings.TrimRight(zd.ipref_zone, ".")
-}
-
-func (ip IP32) String() string {
-	addr := []byte{0, 0, 0, 0}
-	be.PutUint32(addr, uint32(ip))
-	return net.IP(addr).String()
-}
 
 /*
 func send_to_mapper(m *MapperConn, dnm string, gw net.IP, ref ref.Ref) error {
