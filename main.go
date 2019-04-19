@@ -14,7 +14,7 @@ import (
 
 const (
 	interval_fuzz int = 29  // poll interval variation [%]
-	initial_delay int = 307 // initial max delay [s]
+	initial_delay int = 173 // initial max delay [s]
 )
 
 var goexit chan (string)
@@ -52,7 +52,7 @@ func main() {
 
 	// determine sources to poll
 
-	specs := make(map[string]bool)
+	specs := make(map[string]int)
 
 	for _, spec := range cli.specs {
 
@@ -81,21 +81,23 @@ func main() {
 			ipref_domain += "."
 		}
 
-		for _, server := range strings.Split(toks[2], ",") {
+		servers := strings.Split(toks[2], ",")
+		quorum := len(servers)/2 + 1
+		for _, server := range servers {
 
 			if strings.Index(server, ":") < 0 {
 				server = server + ":53"
 			}
 
-			specs[local_domain+":"+ipref_domain+":"+server] = true
+			specs[local_domain+":"+ipref_domain+":"+server] = quorum
 		}
 	}
 
 	// poll data sources
 
 	if len(specs) > 0 {
-		for spec, _ := range specs {
-			go poll_a_source(spec)
+		for spec, quorum := range specs {
+			go poll_a_source(spec, quorum)
 		}
 	} else {
 		goexit <- "no valid source specifications"

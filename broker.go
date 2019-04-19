@@ -46,6 +46,8 @@ type MapData struct {
 	local_domain string
 	ipref_domain string
 	source       string
+	server       string
+	quorum       int
 	hash         uint64
 	arecs        []AddrRec
 }
@@ -68,7 +70,7 @@ func new_mdata(newdata *MapData) {
 	// initialize map status
 
 	if !ok {
-		log.Printf("%v new data source", newdata.source)
+		log.Printf("new source: %v quorum(%v)", newdata.source, newdata.quorum)
 		stat = new(MapStatus)
 		mstat[newdata.source] = stat
 		stat.current = new(MapData)
@@ -78,30 +80,30 @@ func new_mdata(newdata *MapData) {
 	// determine if data is new
 
 	if stat.last.hash != newdata.hash {
-		log.Printf("%v %016x: new data", newdata.source, newdata.hash)
+		if cli.debug {
+			log.Printf("new data:   %v at %v %016x", newdata.source, newdata.server, newdata.hash)
+		}
 		stat.last = newdata
 		stat.count = 0
 	}
 
 	if stat.current.hash == stat.last.hash {
 		if cli.debug {
-			log.Printf("%v %016x: same as current", stat.last.source, stat.last.hash)
+			log.Printf("same data:  %v at %v %016x", newdata.source, newdata.server, newdata.hash)
 		}
 		return // same as current
 	}
 
 	stat.count += 1
 
-	if stat.count < cli.accept_count {
-		log.Printf("%v %016x: count(%v)", stat.last.source, stat.last.hash, stat.count)
-		return // didn't reach accept count
+	if stat.count < newdata.quorum {
+		log.Printf("count(%v):   %v at %v %016x", stat.count, newdata.source, newdata.server, newdata.hash)
+		return // didn't reach quorum count
 	}
 
-	// advertize new data to mapper
+	// new data reached quorum, tell mapper
 
-	log.Printf("%v %016x: count(%v) advertizing to mapper", stat.last.source,
-		stat.last.hash, stat.count)
-
+	log.Printf("quorum(%v):  %v at %v %016x informing mapper", stat.count, newdata.source, newdata.server, newdata.hash)
 	stat.current = stat.last
 }
 
