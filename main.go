@@ -15,6 +15,10 @@ import (
 const (
 	interval_fuzz int = 29  // poll interval variation [%]
 	initial_delay int = 173 // initial max delay [s]
+
+	MDATAQLEN = 4
+	MREQQLEN =  8
+	MCLNQLEN =  8
 )
 
 var goexit chan (string)
@@ -46,8 +50,14 @@ func main() {
 
 	rand.Seed(time.Now().UnixNano())
 
-	mdataq = make(chan *MapData, MDATAQLEN)
+	mstat = make(map[string]*MapStatus)
 
+	mdataq = make(chan *MapData, MDATAQLEN)
+	mreqq = make(chan *MreqData, MREQQLEN)
+	mclientq = make(chan *MreqData, MCLIENTQLEN)
+	mconnq = make(chan string, 3)
+
+	go mclient_conn()
 	go broker()
 
 	// determine sources to poll

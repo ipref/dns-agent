@@ -3,11 +3,115 @@
 package main
 
 const (
-	MQP_PING    = 1
-	MQP_MAP_EA  = 2
-	MQP_INFO_AA = 3
-	MSGMAX      = 320 // 255 + 1 + 16 + 16 + 16 + 4 = 308 rounded up to 16 byte boundary
+	RECONNECT = 17 // [s] delay between reconnect
+	MAXPKTLEN = 16384
+	// mapper request codes
+	GET_CURRENT  = 1
+	SEND_CURRENT = 2
+	GET_RECORDS  = 3
+	SEND_RECORDS = 4
 )
+
+type MreqData struct {
+	code 	int
+	hash	int64
+	source string
+	oid		O32
+	mark    M32
+	arecs   []AddrRec
+}
+
+var mclnq chan(*MreqData)
+
+func send_to_mapper(conn *net.UnixConn, connerr chan<- string, mreq *MreqData) {
+
+	var msg [MAXPKTLEN]byte
+	var wlen int
+
+	_, err = conn.Write(msg[:wlen])
+	if err != nil {
+		// this will lead to re-connect and recreation of goroutines
+		connerr <- fmt.Sprintf("write error: %v", err)
+		return
+	}
+
+}
+
+func read_from_mapper(conn *net.UnixConn, connerr chan<- string) {
+
+	var msg [MAXPKTLEN]byte
+
+	rlen, err := conn.Read(msg[:])
+	if err != nil {
+		// this will lead to re-connect and recreation of goroutines
+		connerr <- fmt.Sprintf("read error: %v", err)
+		return
+	}
+
+}
+
+func mclient_read(conn *net.UnixConn, connerr chan<- string, quit <-chan int) {
+
+	log.Printf("mclient read starting")
+
+	for {
+		select {
+		case <- quit:
+			log.Printf("mclient read quitting")
+			return
+		default:
+			read_from_mapper(conn, connerr)
+		}
+	}
+}
+
+func mclient_write(conn *net.UnixConn, connerr chan<- string, quit <-chan int) {
+
+	log.Printf("mclient write starting")
+
+	for {
+		select {
+		case <- quit:
+			log.Printf("mclient write quitting")
+			return
+		case mreq := <-mclientq:
+			send_to_mapper(conn, connerr, mreq)
+		}
+	}
+}
+
+// Start new mclient. In case of reconnect, the old client will quit and
+// disappear along with old conn and channels.
+func mclient_conn() {
+
+	for {
+		log.Printf("connecting to mapper socket: %v", cli.sockname)
+
+		conn, err := net.DialUnix("unixpacket", nil, &net.UnixAddr{cli.sockname, "unixpacket"})
+
+		if err != nil {
+			log.Printf("ERR  cannot connect to mapper: %v", err)
+		} else {
+
+			connerr := make(chan string, 2) // as many as number of spawned goroutines
+			quit := make(chan int)
+
+			go mclient_read(conn, connerr, quit)
+			go mclient_write(conn, connerr, quit)
+
+			// Now wait for error indications, then try to reconnect
+
+			errmsg := <- connerr
+			log.Printf("ERR  connection to mapper: %v", errmsg)
+			close(quit)
+			conn.Close()
+		}
+
+		log.Printf("reconnecting in %v secs...", RECONNECT)
+		time.Sleep(time.Duration(time.Second * RECONNECT))
+	}
+
+}
 
 /*
 func send_to_mapper(m *MapperConn, dnm string, gw net.IP, ref ref.Ref) error {

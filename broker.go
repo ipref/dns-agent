@@ -19,10 +19,6 @@ to the mapper.
 
 */
 
-const (
-	MDATAQLEN = 2
-)
-
 type M32 int32 // mark, stamp/counter provided by the mapper
 type O32 int32 // id associated with source, provided by the mapper
 
@@ -62,6 +58,7 @@ var be = binary.BigEndian
 
 var mstat map[string]*MapStatus
 var mdataq chan (*MapData)
+var mreqq chan (*MreqData)
 
 func new_mdata(newdata *MapData) {
 
@@ -107,15 +104,62 @@ func new_mdata(newdata *MapData) {
 	stat.current = stat.last
 }
 
+func new_mapper_request(mreq *MreqData) {
+
+	switch mreq.code {
+	case GET_CURRENT:
+
+		// Send info about current sources
+
+		for _, stat := range mstat {
+
+			if len(stat.current.source) > 0 {
+
+				req := MreqData {
+					SEND_CURRENT
+					stat.current.hash
+					stat.current.source
+				}
+
+				mclnq <- &req
+			}
+		}
+
+	case GET_RECORDS:
+
+		// Send records mapper
+
+		stat, ok := mstat[mreq.source]
+
+		if !ok || stat.current.source != mreq.source || stat.current.hash != mreq.hash {
+			log.Printf("ERR:        no records for: %v, ignoring", mreq.source)
+			break
+		}
+
+		req := MreqData{
+				SEND_RECORDS,
+				stat.current.hash,
+				stat.current.source,
+				mreq.oid,
+				mreq.mark,
+				stat.current.arecs
+			}
+
+		mclnq <- &req
+
+	default:
+		log.Printf("ERR:        unknown mapper request code: %v, ignoring", mreq.code)
+	}
+}
+
 func broker() {
 
-	mstat = make(map[string]*MapStatus)
-
 	for {
-
 		select {
 		case mdata := <-mdataq:
 			new_mdata(mdata)
+		case mreq := <-mreqq:
+			new_mapper_request(mreq)
 		}
 	}
 }
