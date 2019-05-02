@@ -106,7 +106,7 @@ func new_mdata(newdata *MapData) {
 
 func new_mapper_request(mreq *MreqData) {
 
-	switch mreq.code {
+	switch mreq.cmd {
 	case GET_CURRENT:
 
 		// Send info about current sources
@@ -115,13 +115,15 @@ func new_mapper_request(mreq *MreqData) {
 
 			if len(stat.current.source) > 0 {
 
-				req := MreqData {
-					SEND_CURRENT
-					stat.current.hash
-					stat.current.source
+				req := new(MreqData)
+				req.cmd = SEND_CURRENT
+				req.data = MreqSendCurrent{
+					len(stat.current.arecs),
+					stat.current.hash,
+					stat.current.source,
 				}
 
-				mclnq <- &req
+				mclientq <- req
 			}
 		}
 
@@ -129,26 +131,28 @@ func new_mapper_request(mreq *MreqData) {
 
 		// Send records mapper
 
-		stat, ok := mstat[mreq.source]
+		data := mreq.data.(MreqGetRecords)
+		stat, ok := mstat[data.source]
 
-		if !ok || stat.current.source != mreq.source || stat.current.hash != mreq.hash {
-			log.Printf("ERR:        no records for: %v, ignoring", mreq.source)
+		if !ok || stat.current.source != data.source || stat.current.hash != data.hash {
+			log.Printf("ERR:        no records for: %v, ignoring", data.source)
 			break
 		}
 
-		req := MreqData{
-				SEND_RECORDS,
-				stat.current.hash,
-				stat.current.source,
-				mreq.oid,
-				mreq.mark,
-				stat.current.arecs
-			}
+		req := new(MreqData)
+		req.cmd = SEND_RECORDS
+		req.data = MreqSendRecords{
+			data.oid,
+			data.mark,
+			stat.current.hash,
+			stat.current.source,
+			stat.current.arecs,
+		}
 
-		mclnq <- &req
+		mclientq <- req
 
 	default:
-		log.Printf("ERR:        unknown mapper request code: %v, ignoring", mreq.code)
+		log.Printf("ERR:        unknown mapper request code: %v, ignoring", mreq.cmd)
 	}
 }
 

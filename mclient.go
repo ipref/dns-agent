@@ -2,6 +2,13 @@
 
 package main
 
+import (
+	"fmt"
+	"log"
+	"net"
+	"time"
+)
+
 const (
 	RECONNECT = 17 // [s] delay between reconnect
 	MAXPKTLEN = 16384
@@ -15,22 +22,40 @@ const (
 	V1_TYPE_STRING = 6
 )
 
-type MreqData struct {
-	code 	int
-	oid		O32
-	mark    M32
-	hash	uint64
-	source	string
+type MreqSendCurrent struct {
+	count  int
+	hash   uint64
+	source string
 }
 
-var mclnq chan(*MreqData)
+type MreqSendRecords struct {
+	oid    O32
+	mark   M32
+	hash   uint64
+	source string
+	arecs  []AddrRec
+}
+
+type MreqGetRecords struct {
+	oid    O32
+	mark   M32
+	hash   uint64
+	source string
+}
+
+type MreqData struct {
+	cmd  byte
+	data interface{}
+}
+
+var mclientq chan (*MreqData)
 
 func send_to_mapper(conn *net.UnixConn, connerr chan<- string, mreq *MreqData) {
 
 	var msg [MAXPKTLEN]byte
 	var wlen int
 
-	_, err = conn.Write(msg[:wlen])
+	_, err := conn.Write(msg[:wlen])
 	if err != nil {
 		// this will lead to re-connect and recreation of goroutines
 		connerr <- fmt.Sprintf("write error: %v", err)
@@ -64,7 +89,7 @@ func read_from_mapper(conn *net.UnixConn, connerr chan<- string) {
 		return
 	}
 
-	if rlen &^0x3 != 0 || rlen/4 != be.Uint16(pkt[6:8]) {
+	if rlen&^0x3 != 0 || uint16(rlen/4) != be.Uint16(pkt[6:8]) {
 		log.Printf("ERR  mclient read: pkt length(%v) does not match length field(%v)",
 			rlen, be.Uint16(pkt[6:8])*4)
 		return
@@ -72,13 +97,13 @@ func read_from_mapper(conn *net.UnixConn, connerr chan<- string) {
 
 	// pkt payload
 
-	cmd := pkt[1] &^0x3f
-	mode := pkt[1] >> 6
-	pktid := be.Uint16(pkt[2:4])
+	cmd := pkt[1] &^ 0x3f
+	//mode := pkt[1] >> 6
+	//pktid := be.Uint16(pkt[2:4])
 	msg := pkt[8:]
 
 	switch cmd {
-	case GET_SOURCE_INFO:
+	case GET_CURRENT:
 
 		mreq := new(MreqData)
 		mreq.cmd = cmd
@@ -97,22 +122,24 @@ func read_from_mapper(conn *net.UnixConn, connerr chan<- string) {
 			return
 		}
 
-		if 8+4+4+8 + ((int(msg[17]) + 2 + 3)/4) * 4 != rlen {
+		if 8+4+4+8+((int(msg[17])+2+3)/4)*4 != rlen {
 			log.Printf("ERR  mclient read: get record invalid string length(%v)", msg[17])
 			return
 		}
 
 		mreq := new(MreqData)
 		mreq.cmd = cmd
-		mreq.oid = O32(be.Uint32(msg[8:12]))
-		mreq.mark = M32(be.Uint32(msg[12:16]))
-		mreq.hash = be.Uint64(msg[16:24])
-		mreq.source = string(msg[18:18+int(msg[17])])
+		mreq.data = MreqGetRecords{
+			O32(be.Uint32(msg[8:12])),
+			M32(be.Uint32(msg[12:16])),
+			be.Uint64(msg[16:24]),
+			string(msg[18 : 18+int(msg[17])]),
+		}
 
 		mreqq <- mreq
 
 	default:
-		log.Printf("ERR  mclient read: unknown pkt type(%v)" cmd)
+		log.Printf("ERR  mclient read: unknown pkt type(%v)", cmd)
 	}
 }
 
@@ -122,7 +149,7 @@ func mclient_read(conn *net.UnixConn, connerr chan<- string, quit <-chan int) {
 
 	for {
 		select {
-		case <- quit:
+		case <-quit:
 			log.Printf("mclient read quitting")
 			return
 		default:
@@ -137,7 +164,7 @@ func mclient_write(conn *net.UnixConn, connerr chan<- string, quit <-chan int) {
 
 	for {
 		select {
-		case <- quit:
+		case <-quit:
 			log.Printf("mclient write quitting")
 			return
 		case mreq := <-mclientq:
@@ -167,7 +194,7 @@ func mclient_conn() {
 
 			// Now wait for error indications, then try to reconnect
 
-			errmsg := <- connerr
+			errmsg := <-connerr
 			log.Printf("ERR  connection to mapper: %v", errmsg)
 			close(quit)
 			conn.Close()
