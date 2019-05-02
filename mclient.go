@@ -10,15 +10,17 @@ const (
 	SEND_CURRENT = 2
 	GET_RECORDS  = 3
 	SEND_RECORDS = 4
+	// pkt constants
+	V1_SIG         = 0x11 // v1 signature
+	V1_TYPE_STRING = 6
 )
 
 type MreqData struct {
 	code 	int
-	hash	int64
-	source string
 	oid		O32
 	mark    M32
-	arecs   []AddrRec
+	hash	uint64
+	source	string
 }
 
 var mclnq chan(*MreqData)
@@ -39,15 +41,79 @@ func send_to_mapper(conn *net.UnixConn, connerr chan<- string, mreq *MreqData) {
 
 func read_from_mapper(conn *net.UnixConn, connerr chan<- string) {
 
-	var msg [MAXPKTLEN]byte
+	var buf [MAXPKTLEN]byte
 
-	rlen, err := conn.Read(msg[:])
+	rlen, err := conn.Read(buf[:])
 	if err != nil {
 		// this will lead to re-connect and recreation of goroutines
 		connerr <- fmt.Sprintf("read error: %v", err)
 		return
 	}
 
+	// validate pkt format
+
+	if rlen < 8 {
+		log.Printf("ERR  mclient read: pkt to short")
+		return
+	}
+
+	pkt := buf[:rlen]
+
+	if pkt[0] != V1_SIG {
+		log.Printf("ERR  mclient read: invalid pkt signature: 0x%02x", pkt[0])
+		return
+	}
+
+	if rlen &^0x3 != 0 || rlen/4 != be.Uint16(pkt[6:8]) {
+		log.Printf("ERR  mclient read: pkt length(%v) does not match length field(%v)",
+			rlen, be.Uint16(pkt[6:8])*4)
+		return
+	}
+
+	// pkt payload
+
+	cmd := pkt[1] &^0x3f
+	mode := pkt[1] >> 6
+	pktid := be.Uint16(pkt[2:4])
+	msg := pkt[8:]
+
+	switch cmd {
+	case GET_SOURCE_INFO:
+
+		mreq := new(MreqData)
+		mreq.cmd = cmd
+
+		mreqq <- mreq
+
+	case GET_RECORDS:
+
+		if len(msg) < 4+4+8+4 { // oid + mark + hash + minimal source
+			log.Printf("ERR  mclient read: get record pkt too short")
+			return
+		}
+
+		if msg[16] != V1_TYPE_STRING {
+			log.Printf("ERR  mclient read: get record invalid string type")
+			return
+		}
+
+		if 8+4+4+8 + ((int(msg[17]) + 2 + 3)/4) * 4 != rlen {
+			log.Printf("ERR  mclient read: get record invalid string length(%v)", msg[17])
+			return
+		}
+
+		mreq := new(MreqData)
+		mreq.cmd = cmd
+		mreq.oid = O32(be.Uint32(msg[8:12]))
+		mreq.mark = M32(be.Uint32(msg[12:16]))
+		mreq.hash = be.Uint64(msg[16:24])
+		mreq.source = string(msg[18:18+int(msg[17])])
+
+		mreqq <- mreq
+
+	default:
+		log.Printf("ERR  mclient read: unknown pkt type(%v)" cmd)
+	}
 }
 
 func mclient_read(conn *net.UnixConn, connerr chan<- string, quit <-chan int) {
