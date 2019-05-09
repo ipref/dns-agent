@@ -20,6 +20,11 @@ const (
 	// pkt constants
 	V1_SIG         = 0x11 // v1 signature
 	V1_TYPE_STRING = 6
+	// pkt types
+	V1_GET_SOURCE_INFO    = 6
+	V1_SOURCE_INFO        = 7
+	V1_GET_SOURCE_RECORDS = 8
+	V1_SOURCE_RECORDS     = 9
 )
 
 type MreqSendCurrent struct {
@@ -49,13 +54,39 @@ type MreqData struct {
 }
 
 var mclientq chan (*MreqData)
+var pktid chan uint16
 
-func send_to_mapper(conn *net.UnixConn, connerr chan<- string, mreq *MreqData) {
+func gen_pktid() {
 
-	var msg [MAXPKTLEN]byte
+	for id := 0; true; id++ {
+
+		if id == 0 {
+			id++
+		}
+		pktid <-id
+	}
+}
+
+func send_to_mapper(conn *net.UnixConn, connerr chan<- string, req *MreqData) {
+
+	var pkt [MAXPKTLEN]byte
 	var wlen int
 
-	_, err := conn.Write(msg[:wlen])
+	pkt[0] = V1_SIG
+	pkt[4] = 0
+	pkt[5] = 0
+
+	switch req.cmd {
+	case SEND_CURRENT:
+
+	case SEND_RECORDS:
+
+	default:
+		log.Printf("ERR  mclient write: unknown pkt type: %v", req.cmd)
+		return
+	}
+
+	_, err := conn.Write(pkt[:wlen])
 	if err != nil {
 		// this will lead to re-connect and recreation of goroutines
 		connerr <- fmt.Sprintf("write error: %v", err)
@@ -103,14 +134,14 @@ func read_from_mapper(conn *net.UnixConn, connerr chan<- string) {
 	msg := pkt[8:]
 
 	switch cmd {
-	case GET_CURRENT:
+	case V1_GET_SOURCE_INFO:
 
 		mreq := new(MreqData)
-		mreq.cmd = cmd
+		mreq.cmd = GET_CURRENT
 
 		mreqq <- mreq
 
-	case GET_RECORDS:
+	case V1_GET_SOURCE_RECORDS:
 
 		if len(msg) < 4+4+8+4 { // oid + mark + hash + minimal source
 			log.Printf("ERR  mclient read: get record pkt too short")
@@ -128,7 +159,7 @@ func read_from_mapper(conn *net.UnixConn, connerr chan<- string) {
 		}
 
 		mreq := new(MreqData)
-		mreq.cmd = cmd
+		mreq.cmd = GET_RECORDS
 		mreq.data = MreqGetRecords{
 			O32(be.Uint32(msg[8:12])),
 			M32(be.Uint32(msg[12:16])),
@@ -167,8 +198,8 @@ func mclient_write(conn *net.UnixConn, connerr chan<- string, quit <-chan int) {
 		case <-quit:
 			log.Printf("mclient write quitting")
 			return
-		case mreq := <-mclientq:
-			send_to_mapper(conn, connerr, mreq)
+		case req := <-mclientq:
+			send_to_mapper(conn, connerr, req)
 		}
 	}
 }
@@ -176,6 +207,9 @@ func mclient_write(conn *net.UnixConn, connerr chan<- string, quit <-chan int) {
 // Start new mclient. In case of reconnect, the old client will quit and
 // disappear along with old conn and channels.
 func mclient_conn() {
+
+	pktid = make(chan uint16, MCLIENTQLEN)
+	go gen_pktid()
 
 	for {
 		log.Printf("connecting to mapper socket: %v", cli.sockname)
