@@ -71,13 +71,50 @@ func send_to_mapper(conn *net.UnixConn, connerr chan<- string, req *MreqData) {
 
 	var pkt [MAXPKTLEN]byte
 	var wlen int
-
-	pkt[0] = V1_SIG
-	pkt[4] = 0
-	pkt[5] = 0
+	var off int
 
 	switch req.cmd {
 	case SEND_CURRENT:
+
+		if minlen := 8 + 4 + 8 + len(req.(MreqSendCurrent).source) + 6; len(pkt) < minlen {
+			log.Printf("ERR  mclient write: packet buffer too short %v, needs %v",
+				len(pkt), minlen)
+			return
+		}
+
+		source_len := len(req.(MreqSendCurrent).source)
+
+		if source_len > 255 {
+			log.Printf("ERR  mclient write: source name too long: %v",
+				req.(MreqSendCurrent).source)
+			return
+		}
+
+		// header
+
+		pkt[0] = V1_SIG
+		pkt[1] = V1_SOURCE_INFO
+		be.PutUint16(pkt[2:4],  <-pktid)
+		pkt[4] = 0
+		pkt[5] = 0
+
+		// source info
+
+		off = 8
+		be.PutUint32(pkt[off+0:off+4], uint32(req.(MreqSendCurrent).count))
+		be.PutUint64(pkt[off+4:off+12], req.(MreqSendCurrent).hash)
+		pkt[off+12] = V1_TYPE_STRING
+		pkt[off+13] = byte(source_len)
+		copy(pkt[off+14:], req.(MreqSendCurrent).source)
+		off += 14
+
+		// pkt len
+
+		for wlen = off + source_len;  wlen&0x3 != 0; wlen++ {
+			pkt[wlen] = 0
+		}
+
+		be.PutUint16(pkt[6:8], uint16(wlen/4))
 
 	case SEND_RECORDS:
 
