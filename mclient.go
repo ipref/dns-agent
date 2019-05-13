@@ -60,12 +60,12 @@ var pktid chan uint16
 
 func gen_pktid() {
 
-	for id := 0; true; id++ {
+	for id := uint16(0); true; id++ {
 
 		if id == 0 {
 			id++
 		}
-		pktid <-id
+		pktid <- id
 	}
 }
 
@@ -78,17 +78,17 @@ func send_to_mapper(conn *net.UnixConn, connerr chan<- string, req *MreqData) {
 	switch req.cmd {
 	case SEND_CURRENT:
 
-		if minlen := 8 + 4 + 8 + len(req.(MreqSendCurrent).source) + 6; len(pkt) < minlen {
+		if minlen := 8 + 4 + 8 + len(req.data.(MreqSendCurrent).source) + 6; len(pkt) < minlen {
 			log.Printf("ERR  mclient write: packet buffer too short %v, needs %v",
 				len(pkt), minlen)
 			return
 		}
 
-		source_len := len(req.(MreqSendCurrent).source)
+		source_len := len(req.data.(MreqSendCurrent).source)
 
 		if source_len > 255 {
 			log.Printf("ERR  mclient write: source name too long: %v",
-				req.(MreqSendCurrent).source)
+				req.data.(MreqSendCurrent).source)
 			return
 		}
 
@@ -96,23 +96,23 @@ func send_to_mapper(conn *net.UnixConn, connerr chan<- string, req *MreqData) {
 
 		pkt[0] = V1_SIG
 		pkt[1] = V1_SOURCE_INFO
-		be.PutUint16(pkt[2:4],  <-pktid)
+		be.PutUint16(pkt[2:4], <-pktid)
 		pkt[4] = 0
 		pkt[5] = 0
 
 		// source info
 
 		off = 8
-		be.PutUint32(pkt[off+0:off+4], uint32(req.(MreqSendCurrent).count))
-		be.PutUint64(pkt[off+4:off+12], req.(MreqSendCurrent).hash)
+		be.PutUint32(pkt[off+0:off+4], uint32(req.data.(MreqSendCurrent).count))
+		be.PutUint64(pkt[off+4:off+12], req.data.(MreqSendCurrent).hash)
 		pkt[off+12] = V1_TYPE_STRING
 		pkt[off+13] = byte(source_len)
-		copy(pkt[off+14:], req.(MreqSendCurrent).source)
+		copy(pkt[off+14:], req.data.(MreqSendCurrent).source)
 		off += 14
 
 		// send the packet
 
-		for wlen = off + source_len;  wlen&0x3 != 0; wlen++ {
+		for wlen = off + source_len; wlen&0x3 != 0; wlen++ {
 			pkt[wlen] = 0
 		}
 
@@ -133,7 +133,7 @@ func send_to_mapper(conn *net.UnixConn, connerr chan<- string, req *MreqData) {
 			return
 		}
 
-		arecs := rec.(MreqSendRecords).arecs
+		arecs := req.data.(MreqSendRecords).arecs
 		nrecs := len(arecs)
 
 		for ix := 0; ix < nrecs; {
@@ -142,31 +142,32 @@ func send_to_mapper(conn *net.UnixConn, connerr chan<- string, req *MreqData) {
 
 			pkt[0] = V1_SIG
 			pkt[1] = V1_SOURCE_RECORDS
-			be.PutUint16(pkt[2:4],  <-pktid)
+			be.PutUint16(pkt[2:4], <-pktid)
 			pkt[4] = 0
 			pkt[5] = 0
 
-			be.PutUint32(pkt[8:12], uint32(rec.(MreqSendRecords).oid))
-			be.PutUint32(pkt[12:16], uint32(rec.(MreqSendRecords).mark))
+			be.PutUint32(pkt[8:12], uint32(req.data.(MreqSendRecords).oid))
+			be.PutUint32(pkt[12:16], uint32(req.data.(MreqSendRecords).mark))
 			pkt[16] = V1_TYPE_AREC
 			pkt[17] = V1_AREC_LEN
 
 			// records
 
 			off = 20
-			maxrecs := (len(pkt) - off)/V1_AREC_LEN
-			count := nrcs - ix
+			maxrecs := (len(pkt) - off) / V1_AREC_LEN
+			count := nrecs - ix
 			if count > maxrecs {
 				count = maxrecs
 			}
 
-			for ; ix < ix + count; ix++, off += V1_AREC_LEN {
+			for maxix := ix + count; ix < maxix; ix++ {
 
 				be.PutUint32(pkt[off:off+4], uint32(arecs[ix].ea))
 				be.PutUint32(pkt[off+4:off+8], uint32(arecs[ix].ip))
 				be.PutUint32(pkt[off+8:off+12], uint32(arecs[ix].gw))
-				be.PutUint64(pkt[off+12:off+20], arecs[ix].ref.h)
-				be.PutUint64(pkt[off+20:off+28], arecs[ix[.ref.l)
+				be.PutUint64(pkt[off+12:off+20], arecs[ix].ref.H)
+				be.PutUint64(pkt[off+20:off+28], arecs[ix].ref.L)
+				off += V1_AREC_LEN
 			}
 
 			// send the packet
