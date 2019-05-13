@@ -19,7 +19,9 @@ const (
 	SEND_RECORDS = 4
 	// pkt constants
 	V1_SIG         = 0x11 // v1 signature
-	V1_TYPE_STRING = 6
+	V1_TYPE_AREC   = 1
+	V1_TYPE_STRING = 4
+	V1_AREC_LEN    = 4 + 4 + 4 + 8 + 8 // ea + ip + gw + rel.h + ref.l
 	// pkt types
 	V1_GET_SOURCE_INFO    = 6
 	V1_SOURCE_INFO        = 7
@@ -108,7 +110,7 @@ func send_to_mapper(conn *net.UnixConn, connerr chan<- string, req *MreqData) {
 		copy(pkt[off+14:], req.(MreqSendCurrent).source)
 		off += 14
 
-		// pkt len
+		// send the packet
 
 		for wlen = off + source_len;  wlen&0x3 != 0; wlen++ {
 			pkt[wlen] = 0
@@ -116,20 +118,74 @@ func send_to_mapper(conn *net.UnixConn, connerr chan<- string, req *MreqData) {
 
 		be.PutUint16(pkt[6:8], uint16(wlen/4))
 
+		_, err := conn.Write(pkt[:wlen])
+		if err != nil {
+			// this will lead to re-connect and recreation of goroutines
+			connerr <- fmt.Sprintf("write error: %v", err)
+			return
+		}
+
 	case SEND_RECORDS:
+
+		if minlen := 8 + (4 + 4 + 4) + V1_AREC_LEN; len(pkt) < minlen {
+			log.Printf("ERR  mclient write: packet buffer too short %v, needs %v",
+				len(pkt), minlen)
+			return
+		}
+
+		arecs := rec.(MreqSendRecords).arecs
+		nrecs := len(arecs)
+
+		for ix := 0; ix < nrecs; {
+
+			// headers
+
+			pkt[0] = V1_SIG
+			pkt[1] = V1_SOURCE_RECORDS
+			be.PutUint16(pkt[2:4],  <-pktid)
+			pkt[4] = 0
+			pkt[5] = 0
+
+			be.PutUint32(pkt[8:12], uint32(rec.(MreqSendRecords).oid))
+			be.PutUint32(pkt[12:16], uint32(rec.(MreqSendRecords).mark))
+			pkt[16] = V1_TYPE_AREC
+			pkt[17] = V1_AREC_LEN
+
+			// records
+
+			off = 20
+			maxrecs := (len(pkt) - off)/V1_AREC_LEN
+			count := nrcs - ix
+			if count > maxrecs {
+				count = maxrecs
+			}
+
+			for ; ix < ix + count; ix++, off += V1_AREC_LEN {
+
+				be.PutUint32(pkt[off:off+4], uint32(arecs[ix].ea))
+				be.PutUint32(pkt[off+4:off+8], uint32(arecs[ix].ip))
+				be.PutUint32(pkt[off+8:off+12], uint32(arecs[ix].gw))
+				be.PutUint64(pkt[off+12:off+20], arecs[ix].ref.h)
+				be.PutUint64(pkt[off+20:off+28], arecs[ix[.ref.l)
+			}
+
+			// send the packet
+
+			wlen = off
+			be.PutUint16(pkt[18:20], uint16(count))
+			be.PutUint16(pkt[6:8], uint16(wlen/4))
+
+			_, err := conn.Write(pkt[:wlen])
+			if err != nil {
+				// this will lead to re-connect and recreation of goroutines
+				connerr <- fmt.Sprintf("write error: %v", err)
+				return
+			}
+		}
 
 	default:
 		log.Printf("ERR  mclient write: unknown pkt type: %v", req.cmd)
-		return
 	}
-
-	_, err := conn.Write(pkt[:wlen])
-	if err != nil {
-		// this will lead to re-connect and recreation of goroutines
-		connerr <- fmt.Sprintf("write error: %v", err)
-		return
-	}
-
 }
 
 func read_from_mapper(conn *net.UnixConn, connerr chan<- string) {
