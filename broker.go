@@ -102,6 +102,15 @@ func new_mdata(newdata *MapData) {
 
 	log.Printf("quorum(%v):  %v at %v %016x informing mapper", stat.count, newdata.source, newdata.server, newdata.hash)
 	stat.current = stat.last
+
+	req := new(MreqData)
+	req.cmd = SEND_CURRENT
+	req.data = MreqSendCurrent{
+		len(stat.current.arecs),
+		stat.current.hash,
+		stat.current.source,
+	}
+	mclientq <- req
 }
 
 func new_mapper_request(mreq *MreqData) {
