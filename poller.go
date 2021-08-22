@@ -3,7 +3,6 @@
 package main
 
 import (
-	"fmt"
 	"github.com/ipref/ref"
 	"github.com/miekg/dns"
 	"hash/fnv"
@@ -81,15 +80,12 @@ func send_to_broker(data *MapData, dedup map[IprefAddr]IP32) {
 
 	data.hash = hash.Sum64()
 
-	if cli.debug { // pretty print results
+	if cli.debug {
 
-		var sb strings.Builder
-
-		fmt.Fprintf(&sb, "records:    %v at %v %016x total(%v):\n", data.source, data.server, data.hash, len(data.arecs))
+		log.Printf("records:    %v at %v %016x total(%v):\n", data.source, data.server, data.hash, len(data.arecs))
 		for _, arec := range data.arecs {
-			fmt.Fprintf(&sb, "    %-12v  %-16v  =  %-16v +  %v\n", arec.host, arec.ip, arec.gw, &arec.ref)
+			log.Printf("|   %-12v  %-16v  =  %-16v +  %v\n", arec.host, arec.ip, arec.gw, &arec.ref)
 		}
-		log.Printf(sb.String())
 	}
 
 	mdataq <- data
