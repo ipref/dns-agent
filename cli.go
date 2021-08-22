@@ -10,6 +10,7 @@ import (
 
 var cli struct {
 	debug      bool
+	devmode    bool
 	poll_ivl   int // [min]
 	mapper_url string
 	// derived
@@ -20,6 +21,7 @@ var cli struct {
 func parse_cli(prog string) {
 
 	flag.BoolVar(&cli.debug, "debug", false, "print debug information")
+	flag.BoolVar(&cli.devmode, "devmode", false, "development mode, run standalone without connecting to mapper")
 	flag.StringVar(&cli.mapper_url, "m", "unix:///run/ipref/mapper.sock", "mapper url")
 	flag.IntVar(&cli.poll_ivl, "t", 59, "approximate transfer interval in minutes")
 	flag.Usage = func() {

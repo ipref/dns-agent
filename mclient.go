@@ -69,6 +69,27 @@ func gen_pktid() {
 	}
 }
 
+// only in devmode
+func drain_mclientq() {
+
+	for req := range mclientq {
+
+		switch req.cmd {
+		case SEND_CURRENT:
+			dd := req.data.(MreqSendCurrent)
+			log.Printf("SEND CURRENT:  %v  hash(%016X)  count(%v)", dd.source, dd.hash, dd.count)
+		case SEND_RECORDS:
+			dd := req.data.(MreqSendRecords)
+			log.Printf("SEND RECORDS:  %v  hash(%016X)", dd.source, dd.hash)
+			for _, arec := range dd.arecs {
+				log.Printf("|              %v + %v  ->  %v", arec.gw, &arec.ref, arec.ip)
+			}
+		default:
+			log.Printf("ERR  drain_clientq: unknown req type: %v", req.cmd)
+		}
+	}
+}
+
 func send_to_mapper(conn *net.UnixConn, connerr chan<- string, req *MreqData) {
 
 	var pkt [MAXPKTLEN]byte
@@ -301,6 +322,11 @@ func mclient_write(conn *net.UnixConn, connerr chan<- string, quit <-chan int) {
 // Start new mclient. In case of reconnect, the old client will quit and
 // disappear along with old conn and channels.
 func mclient_conn() {
+
+	if cli.devmode {
+		go drain_mclientq()
+		return
+	}
 
 	pktid = make(chan uint16, MCLIENTQLEN)
 	go gen_pktid()
