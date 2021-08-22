@@ -36,8 +36,6 @@ func catch_signals() {
 
 func main() {
 
-	log.SetFlags(0)
-
 	toks := strings.Split(os.Args[0], "/")
 	prog := toks[len(toks)-1]
 

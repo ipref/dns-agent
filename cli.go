@@ -13,6 +13,7 @@ var cli struct {
 	devmode    bool
 	poll_ivl   int // [min]
 	mapper_url string
+	stamps     bool
 	// derived
 	specs    []string
 	sockname string
@@ -20,10 +21,13 @@ var cli struct {
 
 func parse_cli(prog string) {
 
+	log.SetFlags(0)
+
 	flag.BoolVar(&cli.debug, "debug", false, "print debug information")
 	flag.BoolVar(&cli.devmode, "devmode", false, "development mode, run standalone without connecting to mapper")
 	flag.StringVar(&cli.mapper_url, "m", "unix:///run/ipref/mapper.sock", "mapper url")
 	flag.IntVar(&cli.poll_ivl, "t", 59, "approximate transfer interval in minutes")
+	flag.BoolVar(&cli.stamps, "time-stamps", false, "print logs with time stamps")
 	flag.Usage = func() {
 
 		log.Println("DNS agent for IPREF mappers. It maps published IPREF addresses")
@@ -63,6 +67,10 @@ func parse_cli(prog string) {
 		log.Println("")
 	}
 	flag.Parse()
+
+	if cli.stamps {
+		log.SetFlags(log.Ltime | log.Lmicroseconds)
+	}
 
 	cli.specs = flag.Args()
 
