@@ -20,7 +20,7 @@ var cli struct {
 func parse_cli(prog string) {
 
 	flag.BoolVar(&cli.debug, "debug", false, "print debug information")
-	flag.StringVar(&cli.mapper_url, "m", "unix:///var/run/ipref-mapper.sock", "mapper url")
+	flag.StringVar(&cli.mapper_url, "m", "unix:///run/ipref/mapper.sock", "mapper url")
 	flag.IntVar(&cli.poll_ivl, "t", 59, "approximate transfer interval in minutes")
 	flag.Usage = func() {
 
