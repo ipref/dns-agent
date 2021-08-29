@@ -38,128 +38,131 @@ type AddrRec struct {
 	host string
 }
 
-type MapData struct {
-	local_domain string
-	ipref_domain string
-	source       string
-	server       string
-	quorum       int
-	hash         uint64
-	arecs        []AddrRec
+//type MapStatus struct {
+//	current *MapData
+//	last    *MapData
+//	count   int
+//}
+
+type StateData struct {
+	source string
+	hash   uint64
+	arecs  []AddrRec
 }
 
-type MapStatus struct {
-	current *MapData
-	last    *MapData
-	count   int
+type SrvData struct {
+	hash  uint64
+	arecs []AddrRec
+}
+type AggData struct {
+	quorum    int
+	hash_sent uint64
+	srvdata   map[string]SrvData
+}
+
+type DnsData struct {
+	source string
+	server string
+	hash   uint64
+	arecs  []AddrRec
 }
 
 var be = binary.BigEndian
 
-var mstat map[string]*MapStatus
-var mdataq chan (*MapData)
+var sources map[string][]string // source -> [server1:port, server2:port, ...]
+var aggdata map[string]AggData  // source -> aggdata -> srvdata
+
+//var mstat map[string]*MapStatus
+var dnsdataq chan DnsData
+var statedataq chan StateData
 var mreqq chan (*MreqData)
 
-func new_mdata(newdata *MapData) {
+func new_data(data DnsData) {
 
-	stat, ok := mstat[newdata.source]
+	// save data
 
-	// initialize map status
-
+	agg, ok := aggdata[data.source]
 	if !ok {
-		log.Printf("new source: %v quorum(%v)", newdata.source, newdata.quorum)
-		stat = new(MapStatus)
-		mstat[newdata.source] = stat
-		stat.current = new(MapData)
-		stat.last = new(MapData)
+		agg.quorum = len(sources[data.source])/2 + 1
+		agg.srvdata = make(map[string]SrvData)
 	}
 
-	// determine if data is new
+	sdata := agg.srvdata[data.server]
 
-	if stat.last.hash != newdata.hash {
-		if cli.debug {
-			log.Printf("new data:   %v at %v %016x", newdata.source, newdata.server, newdata.hash)
+	sdata.hash = data.hash
+	sdata.arecs = data.arecs
+
+	agg.srvdata[data.server] = sdata
+
+	// check if we have a quorum
+
+	qcount := make(map[uint64]int)
+
+	for _, sdata := range agg.srvdata {
+
+		count := qcount[sdata.hash]
+		count++
+		qcount[sdata.hash] = count
+
+		if count == agg.quorum && sdata.hash != agg.hash_sent {
+			// quorum reached for new data
+			agg.hash_sent = sdata.hash
+			statedataq <- StateData{data.source, sdata.hash, sdata.arecs}
+			break
 		}
-		stat.last = newdata
-		stat.count = 0
 	}
+}
 
-	if stat.current.hash == stat.last.hash {
-		if cli.debug {
-			log.Printf("same data:  %v at %v %016x", newdata.source, newdata.server, newdata.hash)
-		}
-		return // same as current
-	}
-
-	stat.count += 1
-
-	if stat.count < newdata.quorum {
-		log.Printf("count(%v):   %v at %v %016x", stat.count, newdata.source, newdata.server, newdata.hash)
-		return // didn't reach quorum count
-	}
-
-	// new data reached quorum, tell mapper
-
-	log.Printf("quorum(%v):  %v at %v %016x informing mapper", stat.count, newdata.source, newdata.server, newdata.hash)
-	stat.current = stat.last
-
-	req := new(MreqData)
-	req.cmd = SEND_CURRENT
-	req.data = MreqSendCurrent{
-		len(stat.current.arecs),
-		stat.current.hash,
-		stat.current.source,
-	}
-	mclientq <- req
+func new_state(state StateData) {
 }
 
 func new_mapper_request(mreq *MreqData) {
 
 	switch mreq.cmd {
 	case GET_CURRENT:
+		/*
+			// Send info about current sources
 
-		// Send info about current sources
+			for _, stat := range mstat {
 
-		for _, stat := range mstat {
+				if len(stat.current.source) > 0 {
 
-			if len(stat.current.source) > 0 {
+					req := new(MreqData)
+					req.cmd = SEND_CURRENT
+					req.data = MreqSendCurrent{
+						len(stat.current.arecs),
+						stat.current.hash,
+						stat.current.source,
+					}
 
-				req := new(MreqData)
-				req.cmd = SEND_CURRENT
-				req.data = MreqSendCurrent{
-					len(stat.current.arecs),
-					stat.current.hash,
-					stat.current.source,
+					mclientq <- req
 				}
-
-				mclientq <- req
 			}
-		}
-
+		*/
 	case GET_RECORDS:
+		/*
+			// Send records mapper
 
-		// Send records mapper
+			data := mreq.data.(MreqGetRecords)
+			stat, ok := mstat[data.source]
 
-		data := mreq.data.(MreqGetRecords)
-		stat, ok := mstat[data.source]
+			if !ok || stat.current.source != data.source || stat.current.hash != data.hash {
+				log.Printf("ERR:        no records for: %v, ignoring", data.source)
+				break
+			}
 
-		if !ok || stat.current.source != data.source || stat.current.hash != data.hash {
-			log.Printf("ERR:        no records for: %v, ignoring", data.source)
-			break
-		}
+			req := new(MreqData)
+			req.cmd = SEND_RECORDS
+			req.data = MreqSendRecords{
+				data.oid,
+				data.mark,
+				stat.current.hash,
+				stat.current.source,
+				stat.current.arecs,
+			}
 
-		req := new(MreqData)
-		req.cmd = SEND_RECORDS
-		req.data = MreqSendRecords{
-			data.oid,
-			data.mark,
-			stat.current.hash,
-			stat.current.source,
-			stat.current.arecs,
-		}
-
-		mclientq <- req
-
+			mclientq <- req
+		*/
 	default:
 		log.Printf("ERR:        unknown mapper request code: %v, ignoring", mreq.cmd)
 	}
@@ -169,8 +172,10 @@ func broker() {
 
 	for {
 		select {
-		case mdata := <-mdataq:
-			new_mdata(mdata)
+		case data := <-dnsdataq:
+			new_data(data)
+		case state := <-statedataq:
+			new_state(state)
 		case mreq := <-mreqq:
 			new_mapper_request(mreq)
 		}

@@ -16,9 +16,10 @@ const (
 	interval_fuzz int = 29  // poll interval variation [%]
 	initial_delay int = 173 // initial max delay [s]
 
-	MDATAQLEN   = 4
-	MREQQLEN    = 8
-	MCLIENTQLEN = 8
+	DNSDATAQLEN   = 4
+	STATEDATAQLEN = 4
+	MREQQLEN      = 8
+	MCLIENTQLEN   = 8
 )
 
 var goexit chan (string)
@@ -48,9 +49,10 @@ func main() {
 
 	rand.Seed(time.Now().UnixNano())
 
-	mstat = make(map[string]*MapStatus)
+	//mstat = make(map[string]*MapStatus)
 
-	mdataq = make(chan *MapData, MDATAQLEN)
+	dnsdataq = make(chan DnsData, DNSDATAQLEN)
+	statedataq = make(chan StateData, STATEDATAQLEN)
 	mreqq = make(chan *MreqData, MREQQLEN)
 	mclientq = make(chan *MreqData, MCLIENTQLEN)
 
@@ -59,7 +61,7 @@ func main() {
 
 	// determine sources to poll
 
-	specs := make(map[string]int)
+	sources = make(map[string][]string)
 
 	for _, spec := range cli.specs {
 
@@ -75,36 +77,53 @@ func main() {
 		local_domain := toks[0]
 		ipref_domain := toks[1]
 
+		strings.TrimRight(local_domain, ".")
+		strings.TrimRight(ipref_domain, ".")
+
 		if len(local_domain) == 0 || len(ipref_domain) == 0 {
 			log.Printf("ERR missing local or public domain: %v", spec)
 			continue
 		}
 
-		if local_domain[len(local_domain)-1:] != "." {
-			local_domain += "."
-		}
+		srvs := strings.Split(toks[2], ",")
+		dedup_srvs := make(map[string]bool)
 
-		if ipref_domain[len(ipref_domain)-1:] != "." {
-			ipref_domain += "."
-		}
+		for _, srv := range srvs {
 
-		servers := strings.Split(toks[2], ",")
-		quorum := len(servers)/2 + 1
-		for _, server := range servers {
+			strings.TrimSpace(srv)
 
-			if strings.Index(server, ":") < 0 {
-				server = server + ":53"
+			if strings.Index(srv, ":") < 0 {
+				srv += ":53"
 			}
 
-			specs[local_domain+":"+ipref_domain+":"+server] = quorum
+			if len(srv) < 4 {
+				log.Printf("ERR empty server: %v", spec)
+				continue
+			}
+
+			dedup_srvs[srv] = true
 		}
+
+		if len(dedup_srvs) == 0 {
+			log.Printf("ERR missing servers: %v", spec)
+			continue
+		}
+
+		servers := make([]string, 0, len(dedup_srvs))
+		for server := range dedup_srvs {
+			servers = append(servers, server)
+		}
+
+		sources[local_domain+":"+ipref_domain] = servers
 	}
 
 	// poll data sources
 
-	if len(specs) > 0 {
-		for spec, quorum := range specs {
-			go poll_a_source(spec, quorum)
+	if len(sources) > 0 {
+		for source, servers := range sources {
+			for _, server := range servers {
+				go poll_a_source(source, server)
+			}
 		}
 	} else {
 		goexit <- "no valid source specifications"

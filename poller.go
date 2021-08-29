@@ -47,7 +47,12 @@ func (arr ByIpRef) Swap(i, j int) {
 	arr[i], arr[j] = arr[j], arr[i]
 }
 
-func send_to_broker(data *MapData, dedup map[IprefAddr]IP32) {
+func send_to_broker(source, server string, dedup map[IprefAddr]IP32) {
+
+	var data DnsData
+
+	data.source = source
+	data.server = server
 
 	buf := make([]byte, 8, 8)
 	hash := fnv.New64a()
@@ -88,20 +93,17 @@ func send_to_broker(data *MapData, dedup map[IprefAddr]IP32) {
 		}
 	}
 
-	mdataq <- data
+	dnsdataq <- data
 }
 
-func poll_a_source(spec string, quorum int) {
+func poll_a_source(source, server string) {
 
-	// LOCAL:PUBLIC:SERVER:PORT
+	// LOCAL:PUBLIC SERVER:PORT
 
-	toks := strings.SplitN(spec, ":", 3)
+	toks := strings.Split(source, ":")
 
-	local_domain := toks[0]
-	ipref_domain := toks[1]
-	server := toks[2]
-
-	source := strings.TrimRight(local_domain, ".") + ":" + strings.TrimRight(ipref_domain, ".")
+	local_domain := toks[0] + "."
+	ipref_domain := toks[1] + "."
 
 	// initial delay
 
@@ -239,12 +241,6 @@ poll_loop:
 			}
 		}
 
-		data := new(MapData)
-		data.local_domain = local_domain
-		data.ipref_domain = ipref_domain
-		data.source = source
-		data.server = server
-		data.quorum = quorum
-		send_to_broker(data, dedup)
+		send_to_broker(source, server, dedup)
 	}
 }
