@@ -14,12 +14,6 @@ import (
 	"time"
 )
 
-type IprefAddr struct {
-	gw   IP32
-	ref  ref.Ref
-	host string
-}
-
 type ByIpRef []IprefAddr
 
 func (arr ByIpRef) Len() int {
@@ -47,7 +41,7 @@ func (arr ByIpRef) Swap(i, j int) {
 	arr[i], arr[j] = arr[j], arr[i]
 }
 
-func send_to_broker(source, server string, dedup map[IprefAddr]IP32) {
+func send_to_broker(source, server string, hosts map[IprefAddr]Host) {
 
 	var data DnsData
 
@@ -57,39 +51,35 @@ func send_to_broker(source, server string, dedup map[IprefAddr]IP32) {
 	buf := make([]byte, 8, 8)
 	hash := fnv.New64a()
 
-	keys := make([]IprefAddr, 0, len(dedup))
-	for key := range dedup {
+	keys := make([]IprefAddr, 0, len(hosts))
+	for key := range hosts {
 		keys = append(keys, key)
 	}
 
 	sort.Sort(ByIpRef(keys)) // sort keys to make hash meaningful
 
-	for _, ipref_addr := range keys {
+	for _, iraddr := range keys {
 
-		ip := dedup[ipref_addr]
+		host := hosts[iraddr]
 
-		arec := AddrRec{0, ip, ipref_addr.gw, ipref_addr.ref, ipref_addr.host}
-		data.arecs = append(data.arecs, arec)
-
-		be.PutUint32(buf[:4], uint32(arec.ea))
+		be.PutUint32(buf[:4], uint32(host.ip))
 		hash.Write(buf[:4])
-		be.PutUint32(buf[:4], uint32(arec.ip))
+		be.PutUint32(buf[:4], uint32(iraddr.gw))
 		hash.Write(buf[:4])
-		be.PutUint32(buf[:4], uint32(arec.gw))
-		hash.Write(buf[:4])
-		be.PutUint64(buf, arec.ref.H)
+		be.PutUint64(buf, iraddr.ref.H)
 		hash.Write(buf)
-		be.PutUint64(buf, arec.ref.L)
+		be.PutUint64(buf, iraddr.ref.L)
 		hash.Write(buf)
 	}
 
 	data.hash = hash.Sum64()
+	data.hosts = hosts
 
 	if cli.debug {
 
-		log.Printf("records:    %v at %v %016x total(%v):\n", data.source, data.server, data.hash, len(data.arecs))
-		for _, arec := range data.arecs {
-			log.Printf("|   %-12v  %-16v  =  %-16v +  %v\n", arec.host, arec.ip, arec.gw, &arec.ref)
+		log.Printf("records(%v):  %v at %v  hash=%016x:\n", len(hosts), data.source, data.server, data.hash)
+		for iraddr, host := range data.hosts {
+			log.Printf("|   %-12v  AA  %-16v + %v  =>  %v\n", host.name, iraddr.gw, &iraddr.ref, host.ip)
 		}
 	}
 
@@ -127,7 +117,7 @@ poll_loop:
 
 		// get domain data
 
-		dedup := make(map[IprefAddr]IP32)
+		hosts := make(map[IprefAddr]Host)
 
 		t := new(dns.Transfer)
 		m := new(dns.Msg)
@@ -213,8 +203,8 @@ poll_loop:
 
 					// find ip
 
-					host := strings.Split(hdr.Name, ".")[0]
-					lhost := host + "." + local_domain
+					hostname := strings.Split(hdr.Name, ".")[0]
+					lhost := hostname + "." + local_domain
 					laddrs, err := net.LookupHost(lhost)
 					if err != nil || len(laddrs) == 0 {
 						log.Printf("ERR:        %v at %v cannot resolve IP address of local host: %v, discarding", source, server, lhost)
@@ -227,20 +217,20 @@ poll_loop:
 						continue
 					}
 
-					// save unique
+					// save dns record
 
-					ipref_addr := IprefAddr{IP32(be.Uint32(gw)), ref, host}
+					iraddr := IprefAddr{IP32(be.Uint32(gw)), ref}
 
-					_, ok := dedup[ipref_addr]
+					_, ok := hosts[iraddr]
 					if ok {
-						log.Printf("WARN:       %v at %v duplicate ipref mapping: %v = %v + %v", source, server, ip, gw, ref)
+						log.Printf("WARN:       %v at %v duplicate ipref address:  %v  AA  %v + %v", source, server, hostname, gw, ref)
 					} else {
-						dedup[ipref_addr] = IP32(be.Uint32(ip.To4()))
+						hosts[iraddr] = Host{IP32(be.Uint32(ip.To4())), hostname}
 					}
 				}
 			}
 		}
 
-		send_to_broker(source, server, dedup)
+		send_to_broker(source, server, hosts)
 	}
 }

@@ -4,6 +4,7 @@ package main
 
 import (
 	"fmt"
+	"github.com/ipref/ref"
 	"log"
 	"net"
 	"time"
@@ -28,6 +29,14 @@ const (
 	V1_GET_SOURCE_RECORDS = 8
 	V1_SOURCE_RECORDS     = 9
 )
+
+type AddrRec struct {
+	ea   IP32
+	ip   IP32
+	gw   IP32
+	ref  ref.Ref
+	host string
+}
 
 type MreqSendCurrent struct {
 	count  int

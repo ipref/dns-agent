@@ -30,12 +30,14 @@ func (ip IP32) String() string {
 	return net.IP(addr).String()
 }
 
-type AddrRec struct {
-	ea   IP32
+type Host struct {
 	ip   IP32
-	gw   IP32
-	ref  ref.Ref
-	host string
+	name string
+}
+
+type IprefAddr struct {
+	gw  IP32
+	ref ref.Ref
 }
 
 //type MapStatus struct {
@@ -47,13 +49,14 @@ type AddrRec struct {
 type StateData struct {
 	source string
 	hash   uint64
-	arecs  []AddrRec
+	hosts  map[IprefAddr]Host
 }
 
 type SrvData struct {
 	hash  uint64
-	arecs []AddrRec
+	hosts map[IprefAddr]Host
 }
+
 type AggData struct {
 	quorum    int
 	hash_sent uint64
@@ -64,7 +67,7 @@ type DnsData struct {
 	source string
 	server string
 	hash   uint64
-	arecs  []AddrRec
+	hosts  map[IprefAddr]Host
 }
 
 var be = binary.BigEndian
@@ -90,11 +93,11 @@ func new_data(data DnsData) {
 	sdata := agg.srvdata[data.server]
 
 	sdata.hash = data.hash
-	sdata.arecs = data.arecs
+	sdata.hosts = data.hosts
 
 	agg.srvdata[data.server] = sdata
 
-	// check if we have a quorum
+	// check if we have a quorum (number of servers with the same hash)
 
 	qcount := make(map[uint64]int)
 
@@ -104,10 +107,12 @@ func new_data(data DnsData) {
 		count++
 		qcount[sdata.hash] = count
 
-		if count == agg.quorum && sdata.hash != agg.hash_sent {
-			// quorum reached for new data
-			agg.hash_sent = sdata.hash
-			statedataq <- StateData{data.source, sdata.hash, sdata.arecs}
+		if count == agg.quorum {
+			if sdata.hash != agg.hash_sent {
+				// new data reached quorum
+				agg.hash_sent = sdata.hash
+				statedataq <- StateData{data.source, sdata.hash, sdata.hosts}
+			}
 			break
 		}
 	}
