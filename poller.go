@@ -43,7 +43,7 @@ func (arr ByIpRef) Swap(i, j int) {
 
 func send_to_broker(source, server string, hosts map[IprefAddr]Host) {
 
-	var data DnsData
+	var data SrvData
 
 	data.source = source
 	data.server = server
@@ -83,7 +83,7 @@ func send_to_broker(source, server string, hosts map[IprefAddr]Host) {
 		}
 	}
 
-	dnsdataq <- data
+	srvdataq <- data
 }
 
 func poll_a_source(source, server string) {

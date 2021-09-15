@@ -11,8 +11,8 @@ import (
 )
 
 const (
-	RECONNECT = 17 // [s] delay between reconnect
-	MAXPKTLEN = 16384
+	RECONNECT = 17   // [s] delay between reconnect
+	MAXPKTLEN = 1280 // max size of packet payload
 	// mapper request codes
 	GET_CURRENT  = 1
 	SEND_CURRENT = 2
@@ -20,6 +20,7 @@ const (
 	SEND_RECORDS = 4
 	// pkt constants
 	V1_SIG         = 0x11 // v1 signature
+	V1_HDR_LEN     = 8
 	V1_TYPE_AREC   = 1
 	V1_TYPE_STRING = 4
 	V1_AREC_LEN    = 4 + 4 + 4 + 8 + 8 // ea + ip + gw + rel.h + ref.l
@@ -31,45 +32,23 @@ const (
 )
 
 type AddrRec struct {
-	ea   IP32
 	ip   IP32
 	gw   IP32
 	ref  ref.Ref
-	host string
 }
 
-type MreqSendCurrent struct {
-	count  int
-	hash   uint64
+type SendReq struct {
 	source string
+	batch  uint32
+	recs   []AddrRec
 }
 
-type MreqSendRecords struct {
-	oid    O32
-	mark   M32
-	hash   uint64
-	source string
-	arecs  []AddrRec
-}
-
-type MreqGetRecords struct {
-	oid    O32
-	mark   M32
-	hash   uint64
-	source string
-}
-
-type MreqData struct {
-	cmd  byte
-	data interface{}
-}
-
-var mclientq chan (*MreqData)
+var sendreqq chan SendReq
 var pktid chan uint16
 
 func gen_pktid() {
 
-	for id := uint16(0); true; id++ {
+	for id := uint16(new_batchid()); true; id++ {
 
 		if id == 0 {
 			id++
@@ -79,28 +58,20 @@ func gen_pktid() {
 }
 
 // only in devmode
-func drain_mclientq() {
+func drain_sendreqq() {
 
-	for req := range mclientq {
+	for req := range sendreqq {
 
-		switch req.cmd {
-		case SEND_CURRENT:
-			dd := req.data.(MreqSendCurrent)
-			log.Printf("SEND CURRENT:  %v  hash(%016X)  count(%v)", dd.source, dd.hash, dd.count)
-		case SEND_RECORDS:
-			dd := req.data.(MreqSendRecords)
-			log.Printf("SEND RECORDS:  %v  hash(%016X)", dd.source, dd.hash)
-			for _, arec := range dd.arecs {
-				log.Printf("|              %v + %v  ->  %v", arec.gw, &arec.ref, arec.ip)
-			}
-		default:
-			log.Printf("ERR  drain_clientq: unknown req type: %v", req.cmd)
+		log.Printf("SEND RECORDS:  %v  batch(%v)", req.source, req.batch)
+		for _, rec := range req.recs {
+			log.Printf("|              %v + %v  ->  %v", rec.gw, &rec.ref, rec.ip)
 		}
+		hostreq(req.source, ACK, req.batch, 919 * time.Millisecond)
 	}
 }
 
-func send_to_mapper(conn *net.UnixConn, connerr chan<- string, req *MreqData) {
-
+func send_to_mapper(conn *net.UnixConn, connerr chan<- string, req SendReq) {
+/*
 	var pkt [MAXPKTLEN]byte
 	var wlen int
 	var off int
@@ -217,6 +188,7 @@ func send_to_mapper(conn *net.UnixConn, connerr chan<- string, req *MreqData) {
 	default:
 		log.Printf("ERR  mclient write: unknown pkt type: %v", req.cmd)
 	}
+*/
 }
 
 func read_from_mapper(conn *net.UnixConn, connerr chan<- string) {
@@ -249,7 +221,7 @@ func read_from_mapper(conn *net.UnixConn, connerr chan<- string) {
 			rlen, be.Uint16(pkt[6:8])*4)
 		return
 	}
-
+/*
 	// pkt payload
 
 	cmd := pkt[1] &^ 0x3f
@@ -296,6 +268,7 @@ func read_from_mapper(conn *net.UnixConn, connerr chan<- string) {
 	default:
 		log.Printf("ERR  mclient read: unknown pkt type(%v)", cmd)
 	}
+*/
 }
 
 func mclient_read(conn *net.UnixConn, connerr chan<- string, quit <-chan int) {
@@ -322,7 +295,7 @@ func mclient_write(conn *net.UnixConn, connerr chan<- string, quit <-chan int) {
 		case <-quit:
 			log.Printf("mclient write quitting")
 			return
-		case req := <-mclientq:
+		case req := <-sendreqq:
 			send_to_mapper(conn, connerr, req)
 		}
 	}
@@ -333,11 +306,11 @@ func mclient_write(conn *net.UnixConn, connerr chan<- string, quit <-chan int) {
 func mclient_conn() {
 
 	if cli.devmode {
-		go drain_mclientq()
+		go drain_sendreqq()
 		return
 	}
 
-	pktid = make(chan uint16, MCLIENTQLEN)
+	pktid = make(chan uint16, SENDREQQLEN)
 	go gen_pktid()
 
 	for {

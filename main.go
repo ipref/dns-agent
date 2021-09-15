@@ -16,13 +16,24 @@ const (
 	interval_fuzz int = 29  // poll interval variation [%]
 	initial_delay int = 173 // initial max delay [s]
 
-	DNSDATAQLEN   = 4
-	STATEDATAQLEN = 4
-	MREQQLEN      = 8
-	MCLIENTQLEN   = 8
+	SRVDATAQLEN = 4
+	QRMDATAQLEN = 4
+	HOSTREQQLEN = 8
+	SENDREQQLEN = 8
 )
 
 var goexit chan (string)
+
+// return non-zero random number
+func new_batchid() uint32 {
+
+	for {
+		batchid := rand.Uint32()
+		if batchid != 0 {
+			return batchid
+		}
+	}
+}
 
 func catch_signals() {
 
@@ -51,10 +62,10 @@ func main() {
 
 	//mstat = make(map[string]*MapStatus)
 
-	dnsdataq = make(chan DnsData, DNSDATAQLEN)
-	statedataq = make(chan StateData, STATEDATAQLEN)
-	mreqq = make(chan *MreqData, MREQQLEN)
-	mclientq = make(chan *MreqData, MCLIENTQLEN)
+	srvdataq = make(chan SrvData, SRVDATAQLEN)
+	qrmdataq = make(chan SrvData, QRMDATAQLEN)
+	hostreqq = make(chan HostReq, HOSTREQQLEN)
+	sendreqq = make(chan SendReq, SENDREQQLEN)
 
 	go mclient_conn()
 	go broker()
@@ -70,7 +81,7 @@ func main() {
 		toks := strings.SplitN(spec, ":", 3)
 
 		if len(toks) < 3 {
-			log.Printf("ERR invalid source specification: %v", spec)
+			log.Printf("ERR  invalid source specification: %v", spec)
 			continue
 		}
 
@@ -81,7 +92,7 @@ func main() {
 		strings.TrimRight(ipref_domain, ".")
 
 		if len(local_domain) == 0 || len(ipref_domain) == 0 {
-			log.Printf("ERR missing local or public domain: %v", spec)
+			log.Printf("ERR  missing local or public domain: %v", spec)
 			continue
 		}
 
@@ -97,7 +108,7 @@ func main() {
 			}
 
 			if len(srv) < 4 {
-				log.Printf("ERR empty server: %v", spec)
+				log.Printf("ERR  empty server: %v", spec)
 				continue
 			}
 
@@ -105,7 +116,7 @@ func main() {
 		}
 
 		if len(dedup_srvs) == 0 {
-			log.Printf("ERR missing servers: %v", spec)
+			log.Printf("ERR  missing servers: %v", spec)
 			continue
 		}
 

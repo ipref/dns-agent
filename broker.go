@@ -7,6 +7,7 @@ import (
 	"github.com/ipref/ref"
 	"log"
 	"net"
+	"time"
 )
 
 /* Broker operations
@@ -16,17 +17,26 @@ each combination of local domain and ipref domain. It requires quorum among
 servers to declare data valid before sending to the mapper.
 */
 
-const (
-
-	// state codes
+const (	// state codes
 
 	NEW = iota
 	SENT
 	ACKED
 )
 
-type M32 int32 // mark, stamp/counter provided by the mapper
-type O32 int32 // id associated with source, provided by the mapper
+const ( // host request codes
+
+	SEND = iota
+	ACK
+	EXPIRE
+	RESEND
+)
+
+const (
+
+	DLY_SEND = 257 * time.Millisecond
+	DLY_EXPIRE = 293 * time.Second
+)
 
 type IP32 uint32 // ip address
 
@@ -34,6 +44,12 @@ func (ip IP32) String() string {
 	addr := []byte{0, 0, 0, 0}
 	be.PutUint32(addr, uint32(ip))
 	return net.IP(addr).String()
+}
+
+type HostReq struct {
+	source string
+	req    int
+	batch  uint32
 }
 
 type IprefAddr struct {
@@ -46,39 +62,27 @@ type Host struct {
 	name string
 }
 
-type Status struct {
+type HostStatus struct {
 	Host
 	state  int
-	batch  int  // batch id to match acks
-	remove bool // remove item from DNS records
+	batch  uint32 // batch id to match acks
+	remove bool   // remove item from DNS records
 }
 
-type MapData struct {
-	source string
-	hash   uint64               // current hash
-	hstat  map[IprefAddr]Status // host status
-}
-
-type StateData struct {
-	source string
-	hash   uint64
-	hosts  map[IprefAddr]Host
-}
-
-type SrvData struct {
-	server string
-	hash   uint64
-	hosts  map[IprefAddr]Host
+type HostData struct {
+	source  string
+	qrmhash uint64 // current quorum hash
+	hstat   map[IprefAddr]HostStatus
 }
 
 type AggData struct { // data from all servers for a source
-	source    string
-	quorum    int
-	hash_sent uint64
-	srvdata   map[string]SrvData
+	source  string
+	quorum  int
+	qrmhash uint64 // hash of servers that reached quorum
+	srvdata map[string]SrvData
 }
 
-type DnsData struct { // data from a single server
+type SrvData struct { // data from a single server
 	source string
 	server string
 	hash   uint64
@@ -87,67 +91,157 @@ type DnsData struct { // data from a single server
 
 var be = binary.BigEndian
 
-var sources map[string][]string // source -> [server1:port, server2:port, ...]
-var aggdata map[string]AggData  // source -> aggdata -> srvdata
-var mapdata map[string]MapData  // source -> host status
+var sources  map[string][]string // source -> [server1:port, server2:port, ...]
+var aggdata  map[string]AggData  // source -> aggdata -> srvdata
+var hostdata map[string]HostData // source -> host status
 
-//var mstat map[string]*MapStatus
-var dnsdataq chan DnsData
-var statedataq chan StateData
-var mreqq chan (*MreqData)
+var srvdataq chan SrvData
+var qrmdataq chan SrvData
+var hostreqq chan HostReq
 
-func new_state(sd StateData) {
+// make a host request
 
-	md, ok := mapdata[sd.source]
+func hostreq(source string, req int, batch uint32, dly time.Duration) {
+
+	go func (source string, req int, batch uint32, dly time.Duration) {
+		time.Sleep(dly)
+		hostreqq <- HostReq{source, req, batch}
+	}(source, req, batch, dly)
+}
+
+func send_host_data(source string) {
+
+	hdata, ok :=  hostdata[source]
+
 	if !ok {
-		md.source = sd.source
-		md.hstat = make(map[IprefAddr]Status)
-		mapdata[sd.source] = md
+		return
 	}
 
-	if sd.hash == md.hash {
+	var sreq SendReq
+
+	sreq.source = source
+	sreq.batch = new_batchid()
+	sreq.recs = make([]AddrRec, 0)
+
+	space := MAXPKTLEN - V1_HDR_LEN
+	space -= 4                      // batch id
+	space -= len(sreq.source) + 10  // source string plus possible padding
+
+	if space < V1_AREC_LEN {
+		log.Printf("ERR  cannot send host data to mapper: packet size too small")
+	}
+
+	for iraddr, hs := range hdata.hstat {
+		if hs.state == NEW {
+
+			hs.state = SENT
+			hs.batch = sreq.batch
+			sreq.recs = append(sreq.recs, AddrRec{hs.ip, iraddr.gw, iraddr.ref})
+
+			if space -= V1_AREC_LEN; space < V1_AREC_LEN {
+				break
+			}
+		}
+	}
+
+	if len(sreq.recs) > 0 {
+
+		sendreqq <- sreq
+		hostreq(source, SEND, 0, DLY_SEND)
+	}
+}
+
+func ack_hosts(source string, batch uint32) {
+
+	hdata, ok :=  hostdata[source]
+
+	if ok {
+		for _, hs := range hdata.hstat {
+			if hs.batch == batch && hs.state == SENT {
+				hs.state = ACKED
+			}
+		}
+	}
+}
+
+// sent but ack never came, so re-send them
+func expire_host_acks(source string, batch uint32) {
+
+	hdata, ok :=  hostdata[source]
+
+	if ok {
+		for _, hs := range hdata.hstat {
+			if hs.batch == batch && hs.state == SENT {
+				hs.state = NEW
+			}
+		}
+	}
+
+	hostreq(source, SEND, 0, DLY_SEND)
+}
+
+func resend_host_data(source string) {
+
+	hdata, ok :=  hostdata[source]
+
+	if ok {
+		for _, hs := range hdata.hstat {
+			hs.state = NEW
+		}
+	}
+
+	hostreq(source, SEND, 0, DLY_SEND)
+}
+
+// new quorum data coming from aggregation
+func new_qrmdata(qdata SrvData) {
+
+	hdata, ok := hostdata[qdata.source]
+	if !ok {
+		hdata.source = qdata.source
+		hdata.hstat = make(map[IprefAddr]HostStatus)
+	}
+
+	if hdata.qrmhash == qdata.hash {
 		return // nothing new
 	}
 
-	// update map
+	// update host data
 
-	for _, hs := range md.hstat {
+	for _, hs := range hdata.hstat {
 		hs.remove = true
 	}
 
-	for iraddr, host := range sd.hosts {
-		hs, ok := md.hstat[iraddr]
+	for iraddr, host := range qdata.hosts {
+		hs, ok := hdata.hstat[iraddr]
 		if !ok || hs.ip != host.ip || hs.name != host.name {
 			hs.ip = host.ip
 			hs.name = host.name
+			hs.batch = 0
 			hs.state = NEW
 		}
 		hs.remove = false
 	}
 
-	md.hash = sd.hash
+	hdata.qrmhash = qdata.hash
+
+	hostreq(hdata.source, SEND, 0, DLY_SEND)
 }
 
-func new_data(data DnsData) {
+// new server data coming from pollers
+func new_srvdata(data SrvData) {
 
-	// save data
+	// save server data
 
 	agg, ok := aggdata[data.source]
+
 	if !ok {
 		agg.source = data.source
 		agg.quorum = len(sources[data.source])/2 + 1
 		agg.srvdata = make(map[string]SrvData)
 	}
 
-	srv, ok := agg.srvdata[data.server]
-	if !ok {
-		srv.server = data.server
-	}
-
-	srv.hash = data.hash
-	srv.hosts = data.hosts
-
-	agg.srvdata[data.server] = srv
+	agg.srvdata[data.server] = data
 
 	// check if we have a quorum (number of servers with the same hash)
 
@@ -160,65 +254,13 @@ func new_data(data DnsData) {
 		qcount[srv.hash] = count
 
 		if count == agg.quorum {
-			if srv.hash != agg.hash_sent {
-				// new data reached quorum
-				agg.hash_sent = srv.hash
-				statedataq <- StateData{data.source, srv.hash, srv.hosts}
+			if srv.hash != agg.qrmhash {
+				// new server data reached quorum
+				agg.qrmhash = srv.hash
+				qrmdataq <- srv
 			}
 			break
 		}
-	}
-}
-
-func new_mapper_request(mreq *MreqData) {
-
-	switch mreq.cmd {
-	case GET_CURRENT:
-		/*
-			// Send info about current sources
-
-			for _, stat := range mstat {
-
-				if len(stat.current.source) > 0 {
-
-					req := new(MreqData)
-					req.cmd = SEND_CURRENT
-					req.data = MreqSendCurrent{
-						len(stat.current.arecs),
-						stat.current.hash,
-						stat.current.source,
-					}
-
-					mclientq <- req
-				}
-			}
-		*/
-	case GET_RECORDS:
-		/*
-			// Send records mapper
-
-			data := mreq.data.(MreqGetRecords)
-			stat, ok := mstat[data.source]
-
-			if !ok || stat.current.source != data.source || stat.current.hash != data.hash {
-				log.Printf("ERR:        no records for: %v, ignoring", data.source)
-				break
-			}
-
-			req := new(MreqData)
-			req.cmd = SEND_RECORDS
-			req.data = MreqSendRecords{
-				data.oid,
-				data.mark,
-				stat.current.hash,
-				stat.current.source,
-				stat.current.arecs,
-			}
-
-			mclientq <- req
-		*/
-	default:
-		log.Printf("ERR:        unknown mapper request code: %v, ignoring", mreq.cmd)
 	}
 }
 
@@ -226,12 +268,21 @@ func broker() {
 
 	for {
 		select {
-		case data := <-dnsdataq:
-			new_data(data)
-		case state := <-statedataq:
-			new_state(state)
-		case mreq := <-mreqq:
-			new_mapper_request(mreq)
+		case data := <-srvdataq:
+			new_srvdata(data)
+		case qdata := <-qrmdataq:
+			new_qrmdata(qdata)
+		case req := <-hostreqq:
+			switch req.req {
+			case SEND:
+				send_host_data(req.source)
+			case ACK:
+				ack_hosts(req.source, req.batch)
+			case EXPIRE:
+				expire_host_acks(req.source, req.batch)
+			case RESEND:
+				resend_host_data(req.source)
+			}
 		}
 	}
 }
