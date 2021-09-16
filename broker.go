@@ -245,6 +245,7 @@ func new_srvdata(data SrvData) {
 		agg.source = data.source
 		agg.quorum = len(sources[data.source])/2 + 1
 		agg.srvdata = make(map[string]SrvData)
+		aggdata[data.source] = agg
 		if cli.debug {
 			log.Printf("new aggregator:  %s  quorum(%v)", agg.source, agg.quorum)
 		}
