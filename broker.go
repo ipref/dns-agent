@@ -199,6 +199,7 @@ func new_qrmdata(qdata SrvData) {
 	if !ok {
 		hdata.source = qdata.source
 		hdata.hstat = make(map[IprefAddr]HostStatus)
+		hostdata[qdata.source] = hdata
 	}
 
 	if hdata.qrmhash == qdata.hash {
