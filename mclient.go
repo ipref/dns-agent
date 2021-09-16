@@ -67,6 +67,7 @@ func drain_sendreqq() {
 			log.Printf("|   %v + %v  ->  %v", rec.gw, &rec.ref, rec.ip)
 		}
 		hostreq(req.source, ACK, req.batch, 919*time.Millisecond)
+		hostreq(req.source, EXPIRE, req.batch, DLY_EXPIRE)
 	}
 }
 

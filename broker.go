@@ -156,7 +156,14 @@ func send_host_data(source string) {
 
 			hs.state = SENT
 			hs.batch = sreq.batch
-			sreq.recs = append(sreq.recs, AddrRec{hs.ip, iraddr.gw, iraddr.ref})
+
+			hdata.hstat[iraddr] = hs
+
+			ip := hs.ip
+			if hs.remove { // ip == 0 means remove this record
+				ip = 0
+			}
+			sreq.recs = append(sreq.recs, AddrRec{ip, iraddr.gw, iraddr.ref})
 
 			if space -= V1_AREC_LEN; space < V1_AREC_LEN {
 				break
@@ -176,9 +183,10 @@ func ack_hosts(source string, batch uint32) {
 	hdata, ok := hostdata[source]
 
 	if ok {
-		for _, hs := range hdata.hstat {
+		for iraddr, hs := range hdata.hstat {
 			if hs.batch == batch && hs.state == SENT {
 				hs.state = ACKED
+				hdata.hstat[iraddr] = hs
 			}
 		}
 	}
@@ -190,9 +198,10 @@ func expire_host_acks(source string, batch uint32) {
 	hdata, ok := hostdata[source]
 
 	if ok {
-		for _, hs := range hdata.hstat {
+		for iraddr, hs := range hdata.hstat {
 			if hs.batch == batch && hs.state == SENT {
 				hs.state = NEW
+				hdata.hstat[iraddr] = hs
 			}
 		}
 	}
@@ -205,8 +214,9 @@ func resend_host_data(source string) {
 	hdata, ok := hostdata[source]
 
 	if ok {
-		for _, hs := range hdata.hstat {
+		for iraddr, hs := range hdata.hstat {
 			hs.state = NEW
+			hdata.hstat[iraddr] = hs
 		}
 	}
 
@@ -236,8 +246,9 @@ func new_qrmdata(qdata SrvData) {
 
 	// update host data
 
-	for _, hs := range hdata.hstat {
+	for iraddr, hs := range hdata.hstat {
 		hs.remove = true
+		hdata.hstat[iraddr] = hs
 	}
 
 	for iraddr, host := range qdata.hosts {
@@ -249,6 +260,7 @@ func new_qrmdata(qdata SrvData) {
 			hs.state = NEW
 		}
 		hs.remove = false
+		hdata.hstat[iraddr] = hs
 	}
 
 	hdata.qrmhash = qdata.hash
