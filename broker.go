@@ -17,7 +17,7 @@ each combination of local domain and ipref domain. It requires quorum among
 servers to declare data valid before sending to the mapper.
 */
 
-const (	// state codes
+const ( // state codes
 
 	NEW = iota
 	SENT
@@ -33,8 +33,7 @@ const ( // host request codes
 )
 
 const (
-
-	DLY_SEND = 257 * time.Millisecond
+	DLY_SEND   = 257 * time.Millisecond
 	DLY_EXPIRE = 293 * time.Second
 )
 
@@ -91,8 +90,8 @@ type SrvData struct { // data from a single server
 
 var be = binary.BigEndian
 
-var sources  map[string][]string // source -> [server1:port, server2:port, ...]
-var aggdata  map[string]AggData  // source -> aggdata -> srvdata
+var sources map[string][]string  // source -> [server1:port, server2:port, ...]
+var aggdata map[string]AggData   // source -> aggdata -> srvdata
 var hostdata map[string]HostData // source -> host status
 
 var srvdataq chan SrvData
@@ -103,7 +102,7 @@ var hostreqq chan HostReq
 
 func hostreq(source string, req int, batch uint32, dly time.Duration) {
 
-	go func (source string, req int, batch uint32, dly time.Duration) {
+	go func(source string, req int, batch uint32, dly time.Duration) {
 		time.Sleep(dly)
 		hostreqq <- HostReq{source, req, batch}
 	}(source, req, batch, dly)
@@ -111,7 +110,7 @@ func hostreq(source string, req int, batch uint32, dly time.Duration) {
 
 func send_host_data(source string) {
 
-	hdata, ok :=  hostdata[source]
+	hdata, ok := hostdata[source]
 
 	if !ok {
 		return
@@ -124,8 +123,8 @@ func send_host_data(source string) {
 	sreq.recs = make([]AddrRec, 0)
 
 	space := MAXPKTLEN - V1_HDR_LEN
-	space -= 4                      // batch id
-	space -= len(sreq.source) + 10  // source string plus possible padding
+	space -= 4                     // batch id
+	space -= len(sreq.source) + 10 // source string plus possible padding
 
 	if space < V1_AREC_LEN {
 		log.Printf("ERR  cannot send host data to mapper: packet size too small")
@@ -153,7 +152,7 @@ func send_host_data(source string) {
 
 func ack_hosts(source string, batch uint32) {
 
-	hdata, ok :=  hostdata[source]
+	hdata, ok := hostdata[source]
 
 	if ok {
 		for _, hs := range hdata.hstat {
@@ -167,7 +166,7 @@ func ack_hosts(source string, batch uint32) {
 // sent but ack never came, so re-send them
 func expire_host_acks(source string, batch uint32) {
 
-	hdata, ok :=  hostdata[source]
+	hdata, ok := hostdata[source]
 
 	if ok {
 		for _, hs := range hdata.hstat {
@@ -182,7 +181,7 @@ func expire_host_acks(source string, batch uint32) {
 
 func resend_host_data(source string) {
 
-	hdata, ok :=  hostdata[source]
+	hdata, ok := hostdata[source]
 
 	if ok {
 		for _, hs := range hdata.hstat {
@@ -204,6 +203,13 @@ func new_qrmdata(qdata SrvData) {
 
 	if hdata.qrmhash == qdata.hash {
 		return // nothing new
+	}
+
+	if cli.debug {
+		log.Printf("accepted quorum records(%v) from %s hash[%016x]", len(qdata.hosts), qdata.source, qdata.hash)
+		for iraddr, host := range qdata.hosts {
+			log.Printf("|   %-12v  AA  %-16v + %v  =>  %v\n", host.name, iraddr.gw, &iraddr.ref, host.ip)
+		}
 	}
 
 	// update host data
@@ -239,6 +245,9 @@ func new_srvdata(data SrvData) {
 		agg.source = data.source
 		agg.quorum = len(sources[data.source])/2 + 1
 		agg.srvdata = make(map[string]SrvData)
+		if cli.debug {
+			log.Printf("new aggregator:  %s  quorum(%v)", agg.source, agg.quorum)
+		}
 	}
 
 	agg.srvdata[data.server] = data
@@ -275,12 +284,24 @@ func broker() {
 		case req := <-hostreqq:
 			switch req.req {
 			case SEND:
+				if cli.debug {
+					log.Printf("hostreqq:  %s  SEND records to mapper", req.source)
+				}
 				send_host_data(req.source)
 			case ACK:
+				if cli.debug {
+					log.Printf("hostreqq:  %s  ACK batch[%08x] from mapper", req.batch, req.source)
+				}
 				ack_hosts(req.source, req.batch)
 			case EXPIRE:
+				if cli.debug {
+					log.Printf("hostreqq:  %s  EXPIRE batch[%08x] from timer", req.batch, req.source)
+				}
 				expire_host_acks(req.source, req.batch)
 			case RESEND:
+				if cli.debug {
+					log.Printf("hostreqq:  %s  RESEND records to mapper", req.source)
+				}
 				resend_host_data(req.source)
 			}
 		}

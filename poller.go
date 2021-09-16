@@ -77,7 +77,7 @@ func send_to_broker(source, server string, hosts map[IprefAddr]Host) {
 
 	if cli.debug {
 
-		log.Printf("records(%v):  %v at %v  hash=%016x:\n", len(hosts), data.source, data.server, data.hash)
+		log.Printf("server records(%v):  %v at %v  hash[%016x]:\n", len(hosts), data.source, data.server, data.hash)
 		for iraddr, host := range data.hosts {
 			log.Printf("|   %-12v  AA  %-16v + %v  =>  %v\n", host.name, iraddr.gw, &iraddr.ref, host.ip)
 		}
@@ -125,7 +125,7 @@ poll_loop:
 		c, err := t.In(m, server)
 
 		if err != nil {
-			log.Printf("ERR:        %v at %v transfer failed: %v", source, server, err)
+			log.Printf("ERR  %v at %v transfer failed: %v", source, server, err)
 			continue
 		}
 
@@ -136,12 +136,12 @@ poll_loop:
 				errmsg := e.Error.Error()
 
 				if errmsg != "dns: no SOA" {
-					log.Printf("ERR:        %v at %v envelope error: %v", source, server, errmsg)
+					log.Printf("ERR  %v at %v envelope error: %v", source, server, errmsg)
 					continue poll_loop
 				}
 
 				if cli.debug {
-					log.Printf("WARN:       %v at %v envelope: %v", source, server, errmsg)
+					log.Printf("WARN %v at %v envelope: %v", source, server, errmsg)
 				}
 			}
 
@@ -165,7 +165,7 @@ poll_loop:
 					addr := strings.Split(txt[3:], "+")
 
 					if len(addr) != 2 {
-						log.Printf("ERR:        %v at %v invalid IPREF address: %v, discarding", source, server, txt[3:])
+						log.Printf("ERR  %v at %v invalid IPREF address: %v, discarding", source, server, txt[3:])
 						continue
 					}
 
@@ -176,7 +176,7 @@ poll_loop:
 
 					ref, err := ref.Parse(addr[1])
 					if err != nil {
-						log.Printf("ERR:        %v at %v invalid IPREF reference: %v %v, discarding", source, server, addr[1], err)
+						log.Printf("ERR  %v at %v invalid IPREF reference: %v %v, discarding", source, server, addr[1], err)
 						continue
 					}
 
@@ -188,13 +188,13 @@ poll_loop:
 
 						addrs, err := net.LookupHost(addr[0])
 						if err != nil || len(addrs) == 0 {
-							log.Printf("ERR:        %v at %v cannot resolve IPREF address portion: %v, discarding", source, server, err)
+							log.Printf("ERR  %v at %v cannot resolve IPREF address portion: %v, discarding", source, server, err)
 							continue
 						}
 
 						gw = net.ParseIP(addrs[0]) // use first address for now
 						if gw == nil {
-							log.Printf("ERR:        %v at %v invalid IPREF address portion: %v, discarding", source, server, addrs[0])
+							log.Printf("ERR  %v at %v invalid IPREF address portion: %v, discarding", source, server, addrs[0])
 							continue
 						}
 					}
@@ -207,13 +207,13 @@ poll_loop:
 					lhost := hostname + "." + local_domain
 					laddrs, err := net.LookupHost(lhost)
 					if err != nil || len(laddrs) == 0 {
-						log.Printf("ERR:        %v at %v cannot resolve IP address of local host: %v, discarding", source, server, lhost)
+						log.Printf("ERR  %v at %v cannot resolve IP address of local host: %v, discarding", source, server, lhost)
 						continue
 					}
 
 					ip := net.ParseIP(laddrs[0]) // use first address for now
 					if ip == nil {
-						log.Printf("ERR:        %v at %v invalid local host IP address: %v, discarding", source, server, laddrs[0])
+						log.Printf("ERR  %v at %v invalid local host IP address: %v, discarding", source, server, laddrs[0])
 						continue
 					}
 
@@ -223,7 +223,7 @@ poll_loop:
 
 					_, ok := hosts[iraddr]
 					if ok {
-						log.Printf("WARN:       %v at %v duplicate ipref address:  %v  AA  %v + %v", source, server, hostname, gw, ref)
+						log.Printf("WARN %v at %v duplicate ipref address:  %v  AA  %v + %v", source, server, hostname, gw, ref)
 					} else {
 						hosts[iraddr] = Host{IP32(be.Uint32(ip.To4())), hostname}
 					}
