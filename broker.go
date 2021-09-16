@@ -113,6 +113,7 @@ func send_host_data(source string) {
 	hdata, ok := hostdata[source]
 
 	if !ok {
+		log.Printf("ERR  unexpected empty host data for  %s", source)
 		return
 	}
 
@@ -130,7 +131,27 @@ func send_host_data(source string) {
 		log.Printf("ERR  cannot send host data to mapper: packet size too small")
 	}
 
+	if cli.debug {
+		log.Printf("scanning for records to send  %v  batch[%08x]",
+			hdata.source, sreq.batch)
+	}
+
 	for iraddr, hs := range hdata.hstat {
+
+		if cli.debug {
+			statestr := "UNK"
+			switch hs.state {
+			case NEW:
+				statestr = "NEW"
+			case ACKED:
+				statestr = "ACKED"
+			case SENT:
+				statestr = "SENT"
+			}
+			log.Printf("|   %-5v   %-12v  AA  %-16v + %v  =>  %v",
+				statestr, hs.name, iraddr.gw, &iraddr.ref, hs.ip)
+		}
+
 		if hs.state == NEW {
 
 			hs.state = SENT
@@ -248,7 +269,8 @@ func new_srvdata(data SrvData) {
 		agg.srvdata = make(map[string]SrvData)
 		aggdata[data.source] = agg
 		if cli.debug {
-			log.Printf("new aggregator:  %s  quorum(%v)", agg.source, agg.quorum)
+			log.Printf("new aggregator:  %s  quorum(%v of %v)",
+				agg.source, agg.quorum, len(sources[data.source]))
 		}
 	}
 
@@ -292,12 +314,12 @@ func broker() {
 				send_host_data(req.source)
 			case ACK:
 				if cli.debug {
-					log.Printf("hostreqq:  %s  ACK batch[%08x] from mapper", req.batch, req.source)
+					log.Printf("hostreqq:  %s  ACK batch[%08x] from mapper", req.source, req.batch)
 				}
 				ack_hosts(req.source, req.batch)
 			case EXPIRE:
 				if cli.debug {
-					log.Printf("hostreqq:  %s  EXPIRE batch[%08x] from timer", req.batch, req.source)
+					log.Printf("hostreqq:  %s  EXPIRE batch[%08x] from timer", req.source, req.batch)
 				}
 				expire_host_acks(req.source, req.batch)
 			case RESEND:
