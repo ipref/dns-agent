@@ -60,7 +60,9 @@ func main() {
 
 	rand.Seed(time.Now().UnixNano())
 
-	//mstat = make(map[string]*MapStatus)
+	sources = make(map[string][]string)
+	aggdata = make(map[string]AggData)
+	hostdata = make(map[string]HostData)
 
 	srvdataq = make(chan SrvData, SRVDATAQLEN)
 	qrmdataq = make(chan SrvData, QRMDATAQLEN)
