@@ -197,21 +197,27 @@ func ack_hosts(source string, batch uint32) {
 	}
 }
 
-// sent but ack never came, so re-send them
+// sent and ack should have come by now, re-send if not
 func expire_host_acks(source string, batch uint32) {
 
 	hdata, ok := hostdata[source]
+
+	resend := false
 
 	if ok {
 		for iraddr, hs := range hdata.hstat {
 			if hs.batch == batch && hs.state == SENT {
 				hs.state = NEW
 				hdata.hstat[iraddr] = hs
+				resend = true
 			}
 		}
 	}
 
-	hostreq(source, SEND, 0, DLY_SEND)
+	if resend {
+		log.Printf("INFO unacknowledged batch[%0x8], resending", batch)
+		hostreq(source, SEND, 0, DLY_SEND)
+	}
 }
 
 func resend_host_data(source string) {
