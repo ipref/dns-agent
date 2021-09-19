@@ -185,8 +185,13 @@ func ack_hosts(source string, batch uint32) {
 	if ok {
 		for iraddr, hs := range hdata.hstat {
 			if hs.batch == batch && hs.state == SENT {
-				hs.state = ACKED
-				hdata.hstat[iraddr] = hs
+				if hs.remove {
+					log.Printf("INFO removing deleted host  %v + %v  from  %s", iraddr.gw, &iraddr.ref, source)
+					delete(hdata.hstat, iraddr)
+				} else {
+					hs.state = ACKED
+					hdata.hstat[iraddr] = hs
+				}
 			}
 		}
 	}
