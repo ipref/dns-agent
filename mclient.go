@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"github.com/ipref/ref"
 	"log"
+	"math/rand"
 	"net"
 	"time"
 )
@@ -66,7 +67,9 @@ func drain_sendreqq() {
 		for _, rec := range req.recs {
 			log.Printf("|   %v + %v  ->  %v", rec.gw, &rec.ref, rec.ip)
 		}
-		hostreq(req.source, ACK, req.batch, 919*time.Millisecond)
+		if rnum := rand.Intn(10); rnum < 7 { // send ACK but not always
+			hostreq(req.source, ACK, req.batch, 919*time.Millisecond)
+		}
 		hostreq(req.source, EXPIRE, req.batch, DLY_EXPIRE)
 	}
 }
