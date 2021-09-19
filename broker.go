@@ -186,11 +186,12 @@ func ack_hosts(source string, batch uint32) {
 		for iraddr, hs := range hdata.hstat {
 			if hs.batch == batch && hs.state == SENT {
 				if hs.remove {
-					log.Printf("INFO removing deleted host  %v + %v  from  %s", iraddr.gw, &iraddr.ref, source)
+					log.Printf("INFO removed host ACK:  %v + %v  at  %s", iraddr.gw, &iraddr.ref, source)
 					delete(hdata.hstat, iraddr)
 				} else {
 					hs.state = ACKED
 					hdata.hstat[iraddr] = hs
+					log.Printf("INFO new host ACK:  %v + %v  at  %s", iraddr.gw, &iraddr.ref, source)
 				}
 			}
 		}
@@ -215,7 +216,7 @@ func expire_host_acks(source string, batch uint32) {
 	}
 
 	if resend {
-		log.Printf("INFO unacknowledged batch[%0x8], resending", batch)
+		log.Printf("ERR  unacknowledged batch[%08x]  for  %s, resending", batch, source)
 		hostreq(source, SEND, 0, DLY_SEND)
 	}
 }
