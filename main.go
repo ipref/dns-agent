@@ -130,15 +130,6 @@ func main() {
 		sources[local_domain+":"+ipref_domain] = servers
 	}
 
-	// print detected data sources
-
-	for source, servers := range sources {
-		log.Printf("I source %s:", source)
-		for _, server := range servers {
-			log.Printf("I            %v", server)
-		}
-	}
-
 	// poll data sources
 
 	if len(sources) > 0 {

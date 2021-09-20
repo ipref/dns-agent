@@ -182,16 +182,18 @@ func ack_hosts(source string, batch uint32) {
 
 	hdata, ok := hostdata[source]
 
+	log.Printf("I ACK records:  %s  batch [%08x]", source, batch)
+
 	if ok {
 		for iraddr, hs := range hdata.hstat {
 			if hs.batch == batch && hs.state == SENT {
 				if hs.remove {
-					log.Printf("I removed host ACK:  %v + %v  at  %s", iraddr.gw, &iraddr.ref, source)
+					log.Printf("|   removed:  %v + %v", iraddr.gw, &iraddr.ref)
 					delete(hdata.hstat, iraddr)
 				} else {
 					hs.state = ACKED
 					hdata.hstat[iraddr] = hs
-					log.Printf("I new host ACK:  %v + %v  at  %s", iraddr.gw, &iraddr.ref, source)
+					log.Printf("|   new host: %v + %v  ->  %v", iraddr.gw, &iraddr.ref, hs.ip)
 				}
 			}
 		}
@@ -216,7 +218,7 @@ func expire_host_acks(source string, batch uint32) {
 	}
 
 	if resend {
-		log.Printf("E unacknowledged batch[%08x]  for  %s, resending", batch, source)
+		log.Printf("E unacknowledged:  %v  batch [%08x], resending", source, batch)
 		hostreq(source, SEND, 0, DLY_SEND)
 	}
 }
@@ -292,9 +294,10 @@ func new_srvdata(data SrvData) {
 		agg.quorum = len(sources[data.source])/2 + 1
 		agg.srvdata = make(map[string]SrvData)
 		aggdata[data.source] = agg
-		if cli.debug {
-			log.Printf("new aggregator:  %s  quorum(%v of %v)",
-				agg.source, agg.quorum, len(sources[data.source]))
+
+		log.Printf("I source  %s  quorum %v of %v:", agg.source, agg.quorum, len(sources[data.source]))
+		for _, server := range sources[data.source] {
+			log.Printf("|   %v", server)
 		}
 	}
 

@@ -63,9 +63,13 @@ func drain_sendreqq() {
 
 	for req := range sendreqq {
 
-		log.Printf("SEND RECORDS:  %v  batch[%08x]", req.source, req.batch)
+		log.Printf("I SEND records:  %v  batch [%08x]", req.source, req.batch)
 		for _, rec := range req.recs {
-			log.Printf("|   %v + %v  ->  %v", rec.gw, &rec.ref, rec.ip)
+			if rec.ip == 0 {
+				log.Printf("|   removed:  %v + %v", rec.gw, &rec.ref)
+			} else {
+				log.Printf("|   new host: %v + %v  ->  %v", rec.gw, &rec.ref, rec.ip)
+			}
 		}
 		if rnum := rand.Intn(10); rnum < 7 { // send ACK but not always
 			hostreq(req.source, ACK, req.batch, 919*time.Millisecond)
