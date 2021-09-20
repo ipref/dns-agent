@@ -84,7 +84,7 @@ func send_to_mapper(conn *net.UnixConn, connerr chan<- string, req SendReq) {
 		case SEND_CURRENT:
 
 			if minlen := 8 + 4 + 8 + len(req.data.(MreqSendCurrent).source) + 6; len(pkt) < minlen {
-				log.Printf("ERR  mclient write: packet buffer too short %v, needs %v",
+				log.Printf("E mclient write: packet buffer too short %v, needs %v",
 					len(pkt), minlen)
 				return
 			}
@@ -92,7 +92,7 @@ func send_to_mapper(conn *net.UnixConn, connerr chan<- string, req SendReq) {
 			source_len := len(req.data.(MreqSendCurrent).source)
 
 			if source_len > 255 {
-				log.Printf("ERR  mclient write: source name too long: %v",
+				log.Printf("E mclient write: source name too long: %v",
 					req.data.(MreqSendCurrent).source)
 				return
 			}
@@ -133,7 +133,7 @@ func send_to_mapper(conn *net.UnixConn, connerr chan<- string, req SendReq) {
 		case SEND_RECORDS:
 
 			if minlen := 8 + (4 + 4 + 4) + V1_AREC_LEN; len(pkt) < minlen {
-				log.Printf("ERR  mclient write: packet buffer too short %v, needs %v",
+				log.Printf("E mclient write: packet buffer too short %v, needs %v",
 					len(pkt), minlen)
 				return
 			}
@@ -190,7 +190,7 @@ func send_to_mapper(conn *net.UnixConn, connerr chan<- string, req SendReq) {
 			}
 
 		default:
-			log.Printf("ERR  mclient write: unknown pkt type: %v", req.cmd)
+			log.Printf("E mclient write: unknown pkt type: %v", req.cmd)
 		}
 	*/
 }
@@ -209,19 +209,19 @@ func read_from_mapper(conn *net.UnixConn, connerr chan<- string) {
 	// validate pkt format
 
 	if rlen < 8 {
-		log.Printf("ERR  mclient read: pkt to short")
+		log.Printf("E mclient read: pkt to short")
 		return
 	}
 
 	pkt := buf[:rlen]
 
 	if pkt[0] != V1_SIG {
-		log.Printf("ERR  mclient read: invalid pkt signature: 0x%02x", pkt[0])
+		log.Printf("E mclient read: invalid pkt signature: 0x%02x", pkt[0])
 		return
 	}
 
 	if rlen&^0x3 != 0 || uint16(rlen/4) != be.Uint16(pkt[6:8]) {
-		log.Printf("ERR  mclient read: pkt length(%v) does not match length field(%v)",
+		log.Printf("E mclient read: pkt length(%v) does not match length field(%v)",
 			rlen, be.Uint16(pkt[6:8])*4)
 		return
 	}
@@ -244,17 +244,17 @@ func read_from_mapper(conn *net.UnixConn, connerr chan<- string) {
 		case V1_GET_SOURCE_RECORDS:
 
 			if len(msg) < 4+4+8+4 { // oid + mark + hash + minimal source
-				log.Printf("ERR  mclient read: get record pkt too short")
+				log.Printf("E mclient read: get record pkt too short")
 				return
 			}
 
 			if msg[16] != V1_TYPE_STRING {
-				log.Printf("ERR  mclient read: get record invalid string type")
+				log.Printf("E mclient read: get record invalid string type")
 				return
 			}
 
 			if 8+4+4+8+((int(msg[17])+2+3)/4)*4 != rlen {
-				log.Printf("ERR  mclient read: get record invalid string length(%v)", msg[17])
+				log.Printf("E mclient read: get record invalid string length(%v)", msg[17])
 				return
 			}
 
@@ -270,7 +270,7 @@ func read_from_mapper(conn *net.UnixConn, connerr chan<- string) {
 			mreqq <- mreq
 
 		default:
-			log.Printf("ERR  mclient read: unknown pkt type(%v)", cmd)
+			log.Printf("E mclient read: unknown pkt type(%v)", cmd)
 		}
 	*/
 }
@@ -323,7 +323,7 @@ func mclient_conn() {
 		conn, err := net.DialUnix("unixpacket", nil, &net.UnixAddr{cli.sockname, "unixpacket"})
 
 		if err != nil {
-			log.Printf("ERR  cannot connect to mapper: %v", err)
+			log.Printf("E cannot connect to mapper: %v", err)
 		} else {
 
 			connerr := make(chan string, 2) // as many as number of spawned goroutines
@@ -335,7 +335,7 @@ func mclient_conn() {
 			// Now wait for error indications, then try to reconnect
 
 			errmsg := <-connerr
-			log.Printf("ERR  connection to mapper: %v", errmsg)
+			log.Printf("E connection to mapper: %v", errmsg)
 			close(quit)
 			conn.Close()
 		}

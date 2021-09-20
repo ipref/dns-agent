@@ -88,6 +88,6 @@ func parse_cli(prog string) {
 	if strings.HasPrefix(cli.mapper_url, "unix:///") {
 		cli.sockname = cli.mapper_url[7:]
 	} else {
-		log.Fatal("FATL unsupported mapper protocol: %v", cli.mapper_url)
+		log.Fatal("F unsupported mapper protocol: %v", cli.mapper_url)
 	}
 }

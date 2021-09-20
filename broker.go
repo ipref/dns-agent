@@ -113,7 +113,7 @@ func send_host_data(source string) {
 	hdata, ok := hostdata[source]
 
 	if !ok {
-		log.Printf("ERR  unexpected empty host data for  %s", source)
+		log.Printf("E unexpected empty host data for  %s", source)
 		return
 	}
 
@@ -128,7 +128,7 @@ func send_host_data(source string) {
 	space -= len(sreq.source) + 10 // source string plus possible padding
 
 	if space < V1_AREC_LEN {
-		log.Printf("ERR  cannot send host data to mapper: packet size too small")
+		log.Printf("E cannot send host data to mapper: packet size too small")
 	}
 
 	if cli.debug {
@@ -186,12 +186,12 @@ func ack_hosts(source string, batch uint32) {
 		for iraddr, hs := range hdata.hstat {
 			if hs.batch == batch && hs.state == SENT {
 				if hs.remove {
-					log.Printf("INFO removed host ACK:  %v + %v  at  %s", iraddr.gw, &iraddr.ref, source)
+					log.Printf("I removed host ACK:  %v + %v  at  %s", iraddr.gw, &iraddr.ref, source)
 					delete(hdata.hstat, iraddr)
 				} else {
 					hs.state = ACKED
 					hdata.hstat[iraddr] = hs
-					log.Printf("INFO new host ACK:  %v + %v  at  %s", iraddr.gw, &iraddr.ref, source)
+					log.Printf("I new host ACK:  %v + %v  at  %s", iraddr.gw, &iraddr.ref, source)
 				}
 			}
 		}
@@ -216,7 +216,7 @@ func expire_host_acks(source string, batch uint32) {
 	}
 
 	if resend {
-		log.Printf("ERR  unacknowledged batch[%08x]  for  %s, resending", batch, source)
+		log.Printf("E unacknowledged batch[%08x]  for  %s, resending", batch, source)
 		hostreq(source, SEND, 0, DLY_SEND)
 	}
 }

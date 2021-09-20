@@ -83,7 +83,7 @@ func main() {
 		toks := strings.SplitN(spec, ":", 3)
 
 		if len(toks) < 3 {
-			log.Printf("ERR  invalid source specification: %v", spec)
+			log.Printf("E invalid source specification: %v", spec)
 			continue
 		}
 
@@ -94,7 +94,7 @@ func main() {
 		strings.TrimRight(ipref_domain, ".")
 
 		if len(local_domain) == 0 || len(ipref_domain) == 0 {
-			log.Printf("ERR  missing local or public domain: %v", spec)
+			log.Printf("E missing local or public domain: %v", spec)
 			continue
 		}
 
@@ -110,7 +110,7 @@ func main() {
 			}
 
 			if len(srv) < 4 {
-				log.Printf("ERR  empty server: %v", spec)
+				log.Printf("E empty server: %v", spec)
 				continue
 			}
 
@@ -118,7 +118,7 @@ func main() {
 		}
 
 		if len(dedup_srvs) == 0 {
-			log.Printf("ERR  missing servers: %v", spec)
+			log.Printf("E missing servers: %v", spec)
 			continue
 		}
 
@@ -133,9 +133,9 @@ func main() {
 	// print detected data sources
 
 	for source, servers := range sources {
-		log.Printf("INFO source %s:", source)
+		log.Printf("I source %s:", source)
 		for _, server := range servers {
-			log.Printf("INFO            %v", server)
+			log.Printf("I            %v", server)
 		}
 	}
 
