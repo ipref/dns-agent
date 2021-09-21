@@ -213,7 +213,7 @@ func expire_host_acks(source string, batch uint32) {
 	}
 
 	if resend {
-		log.Printf("E unacknowledged:  %v  batch [%08x], resending", source, batch)
+		log.Printf("W unacknowledged:  %v  batch [%08x], resending", source, batch)
 		hostreq(source, SEND, 0, DLY_SEND)
 	}
 }

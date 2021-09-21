@@ -188,13 +188,13 @@ poll_loop:
 
 						addrs, err := net.LookupHost(addr[0])
 						if err != nil || len(addrs) == 0 {
-							log.Printf("E %v at %v cannot resolve IPREF address portion: %v, discarding", source, server, err)
+							log.Printf("W %v at %v cannot resolve IPREF address portion: %v, discarding", source, server, err)
 							continue
 						}
 
 						gw = net.ParseIP(addrs[0]) // use first address for now
 						if gw == nil {
-							log.Printf("E %v at %v invalid IPREF address portion: %v, discarding", source, server, addrs[0])
+							log.Printf("W %v at %v invalid IPREF address portion: %v, discarding", source, server, addrs[0])
 							continue
 						}
 					}
@@ -207,13 +207,13 @@ poll_loop:
 					lhost := hostname + "." + local_domain
 					laddrs, err := net.LookupHost(lhost)
 					if err != nil || len(laddrs) == 0 {
-						log.Printf("E %v at %v cannot resolve IP address of local host: %v, discarding", source, server, lhost)
+						log.Printf("W %v at %v cannot resolve IP address of local host: %v, discarding", source, server, lhost)
 						continue
 					}
 
 					ip := net.ParseIP(laddrs[0]) // use first address for now
 					if ip == nil {
-						log.Printf("E %v at %v invalid local host IP address: %v, discarding", source, server, laddrs[0])
+						log.Printf("W %v at %v invalid local host IP address: %v, discarding", source, server, laddrs[0])
 						continue
 					}
 
