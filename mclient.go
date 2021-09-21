@@ -13,7 +13,7 @@ import (
 
 const (
 	RECONNECT = 17   // [s] delay between reconnect
-	MAXPKTLEN = 1280 // max size of packet payload
+	MAXPKTLEN = 1200 // max size of packet payload
 	// mapper request codes
 	GET_CURRENT  = 1
 	SEND_CURRENT = 2

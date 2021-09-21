@@ -122,7 +122,11 @@ func send_host_data(source string) {
 	sreq.batch = new_batchid()
 	sreq.recs = make([]AddrRec, 0)
 
-	space := MAXPKTLEN - V1_HDR_LEN
+	space := MAXPKTLEN
+	if cli.debug {
+		space = 200
+	}
+	space -= V1_HDR_LEN
 	space -= 4                     // batch id
 	space -= len(sreq.source) + 10 // source string plus possible padding
 
