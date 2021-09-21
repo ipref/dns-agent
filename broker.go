@@ -63,9 +63,8 @@ type Host struct {
 
 type HostStatus struct {
 	Host
-	state  int
-	batch  uint32 // batch id to match acks
-	remove bool   // remove item from DNS records
+	state int
+	batch uint32 // batch id to match acks
 }
 
 type HostData struct {
@@ -159,11 +158,7 @@ func send_host_data(source string) {
 
 			hdata.hstat[iraddr] = hs
 
-			ip := hs.ip
-			if hs.remove { // ip == 0 means remove this record
-				ip = 0
-			}
-			sreq.recs = append(sreq.recs, AddrRec{ip, iraddr.gw, iraddr.ref})
+			sreq.recs = append(sreq.recs, AddrRec{hs.ip, iraddr.gw, iraddr.ref})
 
 			if space -= V1_AREC_LEN; space < V1_AREC_LEN {
 				break
@@ -187,7 +182,7 @@ func ack_hosts(source string, batch uint32) {
 	if ok {
 		for iraddr, hs := range hdata.hstat {
 			if hs.batch == batch && hs.state == SENT {
-				if hs.remove {
+				if hs.ip == 0 {
 					log.Printf("|   removed:  %v + %v", iraddr.gw, &iraddr.ref)
 					delete(hdata.hstat, iraddr)
 				} else {
@@ -258,12 +253,19 @@ func new_qrmdata(qdata SrvData) {
 		}
 	}
 
-	// update host data
+	// find hosts to remove
 
 	for iraddr, hs := range hdata.hstat {
-		hs.remove = true
-		hdata.hstat[iraddr] = hs
+		_, ok := qdata.hosts[iraddr]
+		if !ok {
+			hs.ip = 0 // ip == 0 means remove the host
+			hs.batch = 0
+			hs.state = NEW
+			hdata.hstat[iraddr] = hs
+		}
 	}
+
+	// add or update hosts
 
 	for iraddr, host := range qdata.hosts {
 		hs, ok := hdata.hstat[iraddr]
@@ -273,7 +275,6 @@ func new_qrmdata(qdata SrvData) {
 			hs.batch = 0
 			hs.state = NEW
 		}
-		hs.remove = false
 		hdata.hstat[iraddr] = hs
 	}
 
