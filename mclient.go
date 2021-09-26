@@ -45,38 +45,7 @@ type SendReq struct {
 }
 
 var sendreqq chan SendReq
-var pktid chan uint16
-
-func gen_pktid() {
-
-	for id := uint16(new_batchid()); true; id++ {
-
-		if id == 0 {
-			id++
-		}
-		pktid <- id
-	}
-}
-
-// only in devmode
-func drain_sendreqq() {
-
-	for req := range sendreqq {
-
-		log.Printf("I SEND records:  %v  batch [%08x]", req.source, req.batch)
-		for _, rec := range req.recs {
-			if rec.ip == 0 {
-				log.Printf("|   removed:  %v + %v", rec.gw, &rec.ref)
-			} else {
-				log.Printf("|   new host: %v + %v  ->  %v", rec.gw, &rec.ref, rec.ip)
-			}
-		}
-		if rnum := rand.Intn(10); rnum < 7 { // send ACK but not always
-			hostreq(req.source, ACK, req.batch, 919*time.Millisecond)
-		}
-		hostreq(req.source, EXPIRE, req.batch, DLY_EXPIRE)
-	}
-}
+var pktidq chan uint16
 
 func send_to_mapper(conn *net.UnixConn, connerr chan<- string, req SendReq) {
 	/*
@@ -105,7 +74,7 @@ func send_to_mapper(conn *net.UnixConn, connerr chan<- string, req SendReq) {
 
 			pkt[0] = V1_SIG
 			pkt[1] = V1_SOURCE_INFO
-			be.PutUint16(pkt[2:4], <-pktid)
+			be.PutUint16(pkt[2:4], <-pktidq)
 			pkt[4] = 0
 			pkt[5] = 0
 
@@ -151,7 +120,7 @@ func send_to_mapper(conn *net.UnixConn, connerr chan<- string, req SendReq) {
 
 				pkt[0] = V1_SIG
 				pkt[1] = V1_SOURCE_RECORDS
-				be.PutUint16(pkt[2:4], <-pktid)
+				be.PutUint16(pkt[2:4], <-pktidq)
 				pkt[4] = 0
 				pkt[5] = 0
 
@@ -309,17 +278,53 @@ func mclient_write(conn *net.UnixConn, connerr chan<- string, quit <-chan int) {
 	}
 }
 
-// Start new mclient. In case of reconnect, the old client will quit and
-// disappear along with old conn and channels.
+// Start new mclient (mapper client). In case of reconnect, the old client will
+// quit and disappear along with old conn and channels.
 func mclient_conn() {
 
+	// if devmode, don't connect, drain the queue and feed back responses
+	// internally instead
+
 	if cli.devmode {
-		go drain_sendreqq()
+
+		go func() {
+
+			for req := range sendreqq {
+
+				log.Printf("I SEND records:  %v  batch [%08x]", req.source, req.batch)
+				for _, rec := range req.recs {
+					if rec.ip == 0 {
+						log.Printf("|   removed:  %v + %v", rec.gw, &rec.ref)
+					} else {
+						log.Printf("|   new host: %v + %v  ->  %v", rec.gw, &rec.ref, rec.ip)
+					}
+				}
+				if rnum := rand.Intn(10); rnum < 7 { // send ACK but not always
+					hostreq(req.source, ACK, req.batch, 919*time.Millisecond)
+				}
+				hostreq(req.source, EXPIRE, req.batch, DLY_EXPIRE)
+			}
+		}()
+
 		return
 	}
 
-	pktid = make(chan uint16, SENDREQQLEN)
-	go gen_pktid()
+	// start pktid generator
+
+	pktidq = make(chan uint16, SENDREQQLEN)
+
+	go func() {
+
+		for id := uint16(new_batchid()); true; id++ {
+
+			if id == 0 {
+				id++
+			}
+			pktidq <- id
+		}
+	}()
+
+	// connect to mapper
 
 	for {
 		log.Printf("connecting to mapper socket: %v", cli.sockname)
