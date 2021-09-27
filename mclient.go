@@ -219,14 +219,14 @@ payload:
 	}
 }
 
-func mclient_read(conn *net.UnixConn, connerr chan<- string, quit <-chan int) {
+func mclient_read(order uint, conn *net.UnixConn, connerr chan<- string, quit <-chan int) {
 
-	log.Printf("mclient read starting")
+	log.Printf("I mclient read starting order(%v)", order)
 
 	for {
 		select {
 		case <-quit:
-			log.Printf("mclient read quitting")
+			log.Printf("I mclient read quitting order(%v)", order)
 			return
 		default:
 			read_from_mapper(conn, connerr)
@@ -234,14 +234,14 @@ func mclient_read(conn *net.UnixConn, connerr chan<- string, quit <-chan int) {
 	}
 }
 
-func mclient_write(conn *net.UnixConn, connerr chan<- string, quit <-chan int) {
+func mclient_write(order uint, conn *net.UnixConn, connerr chan<- string, quit <-chan int) {
 
-	log.Printf("mclient write starting")
+	log.Printf("I mclient write starting order(%v)", order)
 
 	for {
 		select {
 		case <-quit:
-			log.Printf("mclient write quitting")
+			log.Printf("I mclient write quitting order(%v)", order)
 			return
 		case req := <-sendreqq:
 			send_to_mapper(conn, connerr, req)
@@ -297,8 +297,9 @@ func mclient_conn() {
 
 	// connect to mapper
 
-	for {
-		log.Printf("connecting to mapper socket: %v", cli.sockname)
+	for order := uint(1); true; order++ {
+
+		log.Printf("I connecting to mapper socket: %v", cli.sockname)
 
 		conn, err := net.DialUnix("unixpacket", nil, &net.UnixAddr{cli.sockname, "unixpacket"})
 
@@ -309,8 +310,8 @@ func mclient_conn() {
 			connerr := make(chan string, 2) // as many as number of spawned goroutines
 			quit := make(chan int)
 
-			go mclient_read(conn, connerr, quit)
-			go mclient_write(conn, connerr, quit)
+			go mclient_read(order, conn, connerr, quit)
+			go mclient_write(order, conn, connerr, quit)
 
 			// Now wait for error indications, then try to reconnect
 
@@ -320,7 +321,7 @@ func mclient_conn() {
 			conn.Close()
 		}
 
-		log.Printf("reconnecting in %v secs...", RECONNECT)
+		log.Printf("I reconnecting in %v secs...", RECONNECT)
 		time.Sleep(time.Duration(time.Second * RECONNECT))
 	}
 
