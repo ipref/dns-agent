@@ -18,8 +18,8 @@ const (
 
 	SRVDATAQLEN = 4
 	QRMDATAQLEN = 4
-	HOSTREQQLEN = 8
-	SENDREQQLEN = 8
+	HOSTREQQLEN = 2
+	SENDREQQLEN = 2
 )
 
 var goexit chan (string)

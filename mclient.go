@@ -13,7 +13,7 @@ import (
 )
 
 const (
-	RECONNECT = 17   // [s] delay between reconnect
+	RECONNECT = 97   // [s] delay between reconnect
 	MAXPKTLEN = 1200 // max size of packet payload
 )
 
@@ -244,6 +244,14 @@ func mclient_write(order uint, conn *net.UnixConn, connerr chan<- string, quit <
 			log.Printf("I mclient write quitting order(%v)", order)
 			return
 		case req := <-sendreqq:
+			log.Printf("I SEND records:  %v  batch [%08x]", req.source, req.batch)
+			for _, rec := range req.recs {
+				if rec.ip == 0 {
+					log.Printf("|   removed:  %v + %v", rec.gw, &rec.ref)
+				} else {
+					log.Printf("|   new host: %v + %v  ->  %v", rec.gw, &rec.ref, rec.ip)
+				}
+			}
 			send_to_mapper(conn, connerr, req)
 		}
 	}
@@ -322,7 +330,23 @@ func mclient_conn() {
 		}
 
 		log.Printf("I reconnecting in %v secs...", RECONNECT)
-		time.Sleep(time.Duration(time.Second * RECONNECT))
+
+	drain:
+		for { // wait while draining sendreqq
+			select {
+			case req := <-sendreqq:
+				log.Printf("I DISCARD records:  %v  batch [%08x], no connection to mapper", req.source, req.batch)
+				for _, rec := range req.recs {
+					if rec.ip == 0 {
+						log.Printf("|   removed:  %v + %v", rec.gw, &rec.ref)
+					} else {
+						log.Printf("|   new host: %v + %v  ->  %v", rec.gw, &rec.ref, rec.ip)
+					}
+				}
+			case <-time.After(time.Second * RECONNECT):
+				break drain
+			}
+		}
 	}
 
 }
