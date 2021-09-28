@@ -226,6 +226,8 @@ func resend_host_data(source string) {
 
 	hdata, ok := hostdata[source]
 
+	log.Printf("I RESEND request:  %v, resending", source)
+
 	if ok {
 		for iraddr, hs := range hdata.hstat {
 			hs.state = NEW
