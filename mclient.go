@@ -327,7 +327,8 @@ func mclient_conn() {
 			conn.Close()
 		}
 
-		log.Printf("I reconnecting in %v secs...", RECONNECT)
+		dly := (RECONNECT - RECONNECT/3) + rand.Intn((RECONNECT*2)/3)
+		log.Printf("I reconnecting in %v secs...", dly)
 
 	drain:
 		for { // wait while draining sendreqq
@@ -335,7 +336,7 @@ func mclient_conn() {
 			case req := <-sendreqq:
 				log.Printf("I DISCARD records:  %v  batch [%08x], no connection to mapper", req.source, req.batch)
 				print_records(req.recs)
-			case <-time.After(time.Second * RECONNECT):
+			case <-time.After(time.Second * time.Duration(dly)):
 				break drain
 			}
 		}
