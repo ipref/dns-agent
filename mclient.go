@@ -75,6 +75,17 @@ type SendReq struct {
 var sendreqq chan SendReq
 var pktidq chan uint16
 
+func print_records(recs []AddrRec) {
+
+	for _, rec := range recs {
+		if rec.ip == 0 {
+			log.Printf("|   removed:  %v + %v", rec.gw, &rec.ref)
+		} else {
+			log.Printf("|   new host: %v + %v  ->  %v", rec.gw, &rec.ref, rec.ip)
+		}
+	}
+}
+
 func send_to_mapper(conn *net.UnixConn, connerr chan<- string, req SendReq) {
 
 	var pkt [MAXPKTLEN]byte
@@ -245,13 +256,7 @@ func mclient_write(order uint, conn *net.UnixConn, connerr chan<- string, quit <
 			return
 		case req := <-sendreqq:
 			log.Printf("I SEND records:  %v  batch [%08x]", req.source, req.batch)
-			for _, rec := range req.recs {
-				if rec.ip == 0 {
-					log.Printf("|   removed:  %v + %v", rec.gw, &rec.ref)
-				} else {
-					log.Printf("|   new host: %v + %v  ->  %v", rec.gw, &rec.ref, rec.ip)
-				}
-			}
+			print_records(req.recs)
 			send_to_mapper(conn, connerr, req)
 		}
 	}
@@ -271,13 +276,7 @@ func mclient_conn() {
 			for req := range sendreqq {
 
 				log.Printf("I SEND records:  %v  batch [%08x]", req.source, req.batch)
-				for _, rec := range req.recs {
-					if rec.ip == 0 {
-						log.Printf("|   removed:  %v + %v", rec.gw, &rec.ref)
-					} else {
-						log.Printf("|   new host: %v + %v  ->  %v", rec.gw, &rec.ref, rec.ip)
-					}
-				}
+				print_records(req.recs)
 				if rnum := rand.Intn(10); rnum < 7 { // send ACK but not always
 					hostreq(req.source, ACK, req.batch, 919*time.Millisecond)
 				}
@@ -336,13 +335,7 @@ func mclient_conn() {
 			select {
 			case req := <-sendreqq:
 				log.Printf("I DISCARD records:  %v  batch [%08x], no connection to mapper", req.source, req.batch)
-				for _, rec := range req.recs {
-					if rec.ip == 0 {
-						log.Printf("|   removed:  %v + %v", rec.gw, &rec.ref)
-					} else {
-						log.Printf("|   new host: %v + %v  ->  %v", rec.gw, &rec.ref, rec.ip)
-					}
-				}
+				print_records(req.recs)
 			case <-time.After(time.Second * RECONNECT):
 				break drain
 			}
