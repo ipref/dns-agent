@@ -13,7 +13,6 @@ import (
 )
 
 const (
-	RECONNECT = 97   // [s] delay between reconnect
 	MAXPKTLEN = 1200 // max size of packet payload
 )
 
@@ -303,6 +302,9 @@ func mclient_conn() {
 
 	// connect to mapper
 
+	reconn_dly := (cli.poll_ivl * 60) / 7 // mean reconnect delay
+	reconnq := make(chan string)
+
 	for order := uint(1); true; order++ {
 
 		log.Printf("I connecting to mapper socket: %v", cli.sockname)
@@ -327,8 +329,12 @@ func mclient_conn() {
 			conn.Close()
 		}
 
-		dly := (RECONNECT - RECONNECT/3) + rand.Intn((RECONNECT*2)/3)
-		log.Printf("I reconnecting in %v secs...", dly)
+		go func(mean int) {
+			dly := time.Second * time.Duration((mean-mean/3)+rand.Intn((mean*2)/3))
+			log.Printf("I reconnecting in %v...", dly)
+			time.Sleep(dly)
+			reconnq <- "reconnect"
+		}(reconn_dly)
 
 	drain:
 		for { // wait while draining sendreqq
@@ -336,7 +342,7 @@ func mclient_conn() {
 			case req := <-sendreqq:
 				log.Printf("I DISCARD records:  %v  batch [%08x], no connection to mapper", req.source, req.batch)
 				print_records(req.recs)
-			case <-time.After(time.Second * time.Duration(dly)):
+			case <-reconnq:
 				break drain
 			}
 		}
