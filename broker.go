@@ -174,6 +174,7 @@ func send_host_data(source string) {
 
 		sendreqq <- sreq
 		hostreq(source, SEND, 0, DLY_SEND)
+		hostreq(sreq.source, EXPIRE, sreq.batch, DLY_EXPIRE)
 	}
 }
 

@@ -280,7 +280,6 @@ func mclient_conn() {
 				if rnum := rand.Intn(10); rnum < 7 { // send ACK but not always
 					hostreq(req.source, ACK, req.batch, 919*time.Millisecond)
 				}
-				hostreq(req.source, EXPIRE, req.batch, DLY_EXPIRE)
 			}
 		}()
 
