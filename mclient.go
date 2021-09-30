@@ -119,7 +119,7 @@ func send_to_mapper(conn *net.UnixConn, connerr chan<- string, req SendReq) {
 			pkt[off+1] = byte(dnmlen)
 			copy(pkt[off+2:], dnm)
 
-			for off += dnmlen + 2; off < (dnmlen+5)&^3; off++ {
+			for off += dnmlen + 2; off&3 != 0; off++ {
 				pkt[off] = 0
 			}
 
@@ -141,6 +141,10 @@ func send_to_mapper(conn *net.UnixConn, connerr chan<- string, req SendReq) {
 	}
 
 	// send the packet
+
+	if off&3 != 0 {
+		log.Fatal("F payload length not divisible by 4")
+	}
 
 	be.PutUint16(pkt[V1_PKTLEN:V1_PKTLEN+2], uint16(off/4))
 
