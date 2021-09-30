@@ -233,14 +233,14 @@ payload:
 	}
 }
 
-func mclient_read(order uint, conn *net.UnixConn, connerr chan<- string, quit <-chan int) {
+func mclient_read(inst uint, conn *net.UnixConn, connerr chan<- string, quit <-chan int) {
 
-	log.Printf("I mclient read starting order(%v)", order)
+	log.Printf("I mclient read instance(%v) starting", inst)
 
 	for {
 		select {
 		case <-quit:
-			log.Printf("I mclient read quitting order(%v)", order)
+			log.Printf("I mclient read instance(%v) quitting", inst)
 			return
 		default:
 			read_from_mapper(conn, connerr)
@@ -248,14 +248,14 @@ func mclient_read(order uint, conn *net.UnixConn, connerr chan<- string, quit <-
 	}
 }
 
-func mclient_write(order uint, conn *net.UnixConn, connerr chan<- string, quit <-chan int) {
+func mclient_write(inst uint, conn *net.UnixConn, connerr chan<- string, quit <-chan int) {
 
-	log.Printf("I mclient write starting order(%v)", order)
+	log.Printf("I mclient write instance(%v) starting", inst)
 
 	for {
 		select {
 		case <-quit:
-			log.Printf("I mclient write quitting order(%v)", order)
+			log.Printf("I mclient write instance(%v) quitting", inst)
 			return
 		case req := <-sendreqq:
 			log.Printf("I SEND records:  %v  batch [%08x]", req.source, req.batch)
@@ -309,7 +309,7 @@ func mclient_conn() {
 	reconn_dly := (cli.poll_ivl * 60) / 7 // mean reconnect delay
 	reconnq := make(chan string)
 
-	for order := uint(1); true; order++ {
+	for inst := uint(1); true; inst++ {
 
 		log.Printf("I connecting to mapper socket: %v", cli.sockname)
 
@@ -322,8 +322,8 @@ func mclient_conn() {
 			connerr := make(chan string, 2) // as many as number of spawned goroutines
 			quit := make(chan int)
 
-			go mclient_read(order, conn, connerr, quit)
-			go mclient_write(order, conn, connerr, quit)
+			go mclient_read(inst, conn, connerr, quit)
+			go mclient_write(inst, conn, connerr, quit)
 
 			// Now wait for error indications, then try to reconnect
 
