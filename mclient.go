@@ -225,7 +225,7 @@ payload:
 		hostreqq <- req
 
 	default:
-		log.Printf("E mclient read: unknown pkt type(%v)", pkt[V1_CMD])
+		log.Printf("E mclient read: unknown pkt type[%02x]", pkt[V1_CMD])
 	}
 }
 
