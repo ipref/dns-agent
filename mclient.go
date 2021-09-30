@@ -3,7 +3,6 @@
 package main
 
 import (
-	"fmt"
 	"github.com/ipref/ref"
 	"log"
 	"math/rand"
@@ -85,10 +84,11 @@ func print_records(recs []AddrRec) {
 	}
 }
 
-func send_to_mapper(conn *net.UnixConn, connerr chan<- string, req SendReq) {
+func packet_to_send(req SendReq) []byte {
 
-	var pkt [MAXPKTLEN]byte
 	var off int
+
+	pkt := make([]byte, MAXPKTLEN)
 
 	// V1 header
 
@@ -99,6 +99,16 @@ func send_to_mapper(conn *net.UnixConn, connerr chan<- string, req SendReq) {
 	pkt[V1_RESERVED+1] = 0
 
 	off = V1_HDR_LEN
+
+	// see if null request
+
+	if len(req.source) == 0 && req.batch == 0 {
+
+		pkt[V1_CMD] = V1_DATA | V1_NOOP
+		be.PutUint16(pkt[V1_PKTLEN:V1_PKTLEN+2], uint16(off/4))
+		log.Printf("I SEND null packet")
+		return pkt[:off]
+	}
 
 	// batch id
 
@@ -148,44 +158,33 @@ func send_to_mapper(conn *net.UnixConn, connerr chan<- string, req SendReq) {
 
 	be.PutUint16(pkt[V1_PKTLEN:V1_PKTLEN+2], uint16(off/4))
 
-	_, err := conn.Write(pkt[:off])
-	if err != nil {
-		// this will lead to re-connect and recreation of goroutines
-		connerr <- fmt.Sprintf("write error: %v", err)
-		return
-	}
+	log.Printf("I SEND records:  %v  batch [%08x]", req.source, req.batch)
+	print_records(req.recs)
 
+	return pkt[:off]
 }
 
-func read_from_mapper(conn *net.UnixConn, connerr chan<- string) {
+func parse_packet(pkt []byte) HostReq {
 
-	var buf [MAXPKTLEN]byte
-
-	rlen, err := conn.Read(buf[:])
-	if err != nil {
-		// this will lead to re-connect and recreation of goroutines
-		connerr <- fmt.Sprintf("read error: %v", err)
-		return
-	}
+	hreq := HostReq{"", NULL, 0}
+	rlen := len(pkt)
 
 	// validate pkt format
 
 	if rlen < 8 {
 		log.Printf("E mclient read: pkt to short")
-		return
+		return hreq
 	}
-
-	pkt := buf[:rlen]
 
 	if pkt[0] != V1_SIG {
 		log.Printf("E mclient read: invalid pkt signature: 0x%02x", pkt[V1_VER])
-		return
+		return hreq
 	}
 
 	if rlen&^0x3 != 0 || uint16(rlen/4) != be.Uint16(pkt[V1_PKTLEN:V1_PKTLEN+2]) {
 		log.Printf("E mclient read: pkt length(%v) does not match length field(%v)",
 			rlen, be.Uint16(pkt[V1_PKTLEN:V1_PKTLEN+2])*4)
-		return
+		return hreq
 	}
 
 	// pkt payload
@@ -197,6 +196,8 @@ func read_from_mapper(conn *net.UnixConn, connerr chan<- string) {
 
 payload:
 	switch pkt[V1_CMD] {
+	case V1_DATA | V1_NOOP:
+	case V1_ACK | V1_NOOP:
 	case V1_ACK | V1_MC_HOST_DATA:
 
 		batch = be.Uint32(pkt[off : off+4])
@@ -221,48 +222,66 @@ payload:
 
 		source = strings.TrimSuffix(source, ":")
 
-		req := HostReq{source, ACK, batch}
-		if batch == 0 {
-			req.req = RESEND
-		}
+		hreq := HostReq{source, ACK, batch}
+		hreq.source = source
+		hreq.req = ACK
+		hreq.batch = batch
 
-		hostreqq <- req
+		if batch == 0 {
+			hreq.req = RESEND
+		}
 
 	default:
 		log.Printf("E mclient read: unknown pkt type[%02x]", pkt[V1_CMD])
 	}
+
+	return hreq
 }
 
-func mclient_read(inst uint, conn *net.UnixConn, connerr chan<- string, quit <-chan int) {
+func mclient_read(inst uint, conn *net.UnixConn, connerr chan<- string) {
 
 	log.Printf("I mclient read instance(%v) starting", inst)
 
 	for {
-		select {
-		case <-quit:
-			log.Printf("I mclient read instance(%v) quitting", inst)
-			return
-		default:
-			read_from_mapper(conn, connerr)
+
+		buf := make([]byte, MAXPKTLEN)
+
+		rlen, err := conn.Read(buf[:])
+
+		if err != nil {
+			log.Printf("E mclient read instance(%v) io error: %v", inst, err)
+			conn.Close()
+			sendreqq <- SendReq{"", 0, []AddrRec{}} // force send which will cause mclient write to exit
+			break
+		}
+
+		if hreq := parse_packet(buf[:rlen]); hreq.req != NULL {
+			hostreqq <- hreq
 		}
 	}
+
+	log.Printf("I mclient read instance(%v) exiting", inst)
+
+	connerr <- "reconnect"
 }
 
-func mclient_write(inst uint, conn *net.UnixConn, connerr chan<- string, quit <-chan int) {
+func mclient_write(inst uint, conn *net.UnixConn) {
 
 	log.Printf("I mclient write instance(%v) starting", inst)
 
-	for {
-		select {
-		case <-quit:
-			log.Printf("I mclient write instance(%v) quitting", inst)
-			return
-		case req := <-sendreqq:
-			log.Printf("I SEND records:  %v  batch [%08x]", req.source, req.batch)
-			print_records(req.recs)
-			send_to_mapper(conn, connerr, req)
+	for req := range sendreqq {
+
+		pkt := packet_to_send(req)
+
+		_, err := conn.Write(pkt)
+		if err != nil {
+			log.Printf("E mclient write instance(%v) io error: %v", inst, err)
+			conn.Close() // force mclient read to exit
+			break
 		}
 	}
+
+	log.Printf("I mclient write instance(%v) exiting", inst)
 }
 
 // Start new mclient (mapper client). In case of reconnect, the old client will
@@ -316,21 +335,17 @@ func mclient_conn() {
 		conn, err := net.DialUnix("unixpacket", nil, &net.UnixAddr{cli.sockname, "unixpacket"})
 
 		if err != nil {
+
 			log.Printf("E cannot connect to mapper: %v", err)
+
 		} else {
 
-			connerr := make(chan string, 2) // as many as number of spawned goroutines
-			quit := make(chan int)
+			connerr := make(chan string)
 
-			go mclient_read(inst, conn, connerr, quit)
-			go mclient_write(inst, conn, connerr, quit)
+			go mclient_read(inst, conn, connerr)
+			go mclient_write(inst, conn)
 
-			// Now wait for error indications, then try to reconnect
-
-			errmsg := <-connerr
-			log.Printf("E connection to mapper: %v", errmsg)
-			close(quit)
-			conn.Close()
+			<-connerr // wait for error indications, then try to reconnect
 		}
 
 		go func(mean int) {

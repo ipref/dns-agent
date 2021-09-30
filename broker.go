@@ -26,7 +26,8 @@ const ( // state codes
 
 const ( // host request codes
 
-	SEND = iota
+	NULL = iota
+	SEND
 	ACK
 	EXPIRE
 	RESEND
@@ -362,6 +363,10 @@ func broker() {
 					log.Printf("hostreqq:  %s  RESEND records to mapper", req.source)
 				}
 				resend_host_data(req.source)
+			case NULL:
+				if cli.debug {
+					log.Printf("hostreqq:  NULL")
+				}
 			}
 		}
 	}
