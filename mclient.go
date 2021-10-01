@@ -45,9 +45,9 @@ const ( // v1 item types
 
 const ( // v1 commands
 
-	V1_NOOP             = 0
-	V1_MC_HOST_DATA     = 14
-	V1_MC_GET_HOST_DATA = 15
+	V1_NOOP          = 0
+	V1_MC_HOST_DATA  = 14
+	V1_GET_HOST_DATA = 15
 )
 
 const ( // v1 command mode, top two bits
@@ -204,7 +204,7 @@ payload:
 
 		fallthrough
 
-	case V1_DATA | V1_MC_GET_HOST_DATA:
+	case V1_DATA | V1_GET_HOST_DATA:
 
 		off += 4
 
