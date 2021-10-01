@@ -3,6 +3,7 @@
 package main
 
 import (
+	"errors"
 	"github.com/ipref/ref"
 	"log"
 	"math/rand"
@@ -279,7 +280,9 @@ func mclient_write(inst uint, conn *net.UnixConn) {
 
 		_, err := conn.Write(pkt)
 		if err != nil {
-			log.Printf("E mclient write instance(%v) io error: %v", inst, err)
+			if !errors.Is(err, net.ErrClosed) {
+				log.Printf("E mclient write instance(%v) io error: %v", inst, err)
+			}
 			conn.Close() // force mclient read to exit
 			break
 		}
