@@ -113,7 +113,7 @@ func send_host_data(source string) {
 	hdata, ok := hostdata[source]
 
 	if !ok {
-		log.Printf("E unexpected empty host data for  %s", source)
+		log.Printf("E unexpected empty host data for  %v", source)
 		return
 	}
 
@@ -183,7 +183,7 @@ func ack_hosts(source string, batch uint32) {
 
 	hdata, ok := hostdata[source]
 
-	log.Printf("I ACK records:  %s  batch [%08x]", source, batch)
+	log.Printf("I ACK records:  %v  batch [%08x]", source, batch)
 
 	if ok {
 		for iraddr, hs := range hdata.hstat {
@@ -255,7 +255,7 @@ func new_qrmdata(qdata SrvData) {
 	}
 
 	if cli.debug {
-		log.Printf("accepted quorum records(%v) from %s hash[%016x]", len(qdata.hosts), qdata.source, qdata.hash)
+		log.Printf("accepted quorum records(%v) from %v hash[%016x]", len(qdata.hosts), qdata.source, qdata.hash)
 		for iraddr, host := range qdata.hosts {
 			log.Printf("|   %-12v  AA  %-16v + %v  =>  %v\n", host.name, iraddr.gw, &iraddr.ref, host.ip)
 		}
@@ -304,7 +304,7 @@ func new_srvdata(data SrvData) {
 		agg.srvdata = make(map[string]SrvData)
 		aggdata[data.source] = agg
 
-		log.Printf("I source  %s  quorum %v of %v:", agg.source, agg.quorum, len(sources[data.source]))
+		log.Printf("I source  %v  quorum %v of %v:", agg.source, agg.quorum, len(sources[data.source]))
 		for _, server := range sources[data.source] {
 			log.Printf("|   %v", server)
 		}
@@ -345,22 +345,22 @@ func broker() {
 			switch req.req {
 			case SEND:
 				if cli.debug {
-					log.Printf("hostreqq:  %s  SEND records to mapper", req.source)
+					log.Printf("hostreqq:  %v  SEND records to mapper", req.source)
 				}
 				send_host_data(req.source)
 			case ACK:
 				if cli.debug {
-					log.Printf("hostreqq:  %s  ACK batch[%08x] from mapper", req.source, req.batch)
+					log.Printf("hostreqq:  %v  ACK batch[%08x] from mapper", req.source, req.batch)
 				}
 				ack_hosts(req.source, req.batch)
 			case EXPIRE:
 				if cli.debug {
-					log.Printf("hostreqq:  %s  EXPIRE batch[%08x] from timer", req.source, req.batch)
+					log.Printf("hostreqq:  %v  EXPIRE batch[%08x] from timer", req.source, req.batch)
 				}
 				expire_host_acks(req.source, req.batch)
 			case RESEND:
 				if cli.debug {
-					log.Printf("hostreqq:  %s  RESEND records to mapper", req.source)
+					log.Printf("hostreqq:  %v  RESEND records to mapper", req.source)
 				}
 				resend_host_data(req.source)
 			case NULL:

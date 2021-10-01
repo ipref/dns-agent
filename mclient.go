@@ -208,21 +208,25 @@ payload:
 
 		off += 4
 
-		for off < len(pkt) {
+		for ix := 0; ix < 2; ix++ {
 
-			if pkt[off] != V1_TYPE_STRING {
-				log.Printf("E mclient read: missing source string")
+			if rlen <= off+4 {
+				log.Printf("E mclient read: invalid source string, dropping packet")
 				break payload
 			}
 
-			slen := int(pkt[off+1])
-			source += string(pkt[off+2:off+2+slen]) + ":"
-			off += (slen + 5) & ^3
+			if pkt[off] != V1_TYPE_STRING || rlen < (off+int(pkt[off+1])+5)&^3 {
+				log.Printf("E mclient read: invalid source string length, dropping packet")
+				break payload
+			}
+
+			source += string(pkt[off+2:off+2+int(pkt[off+1])]) + ":"
+
+			off += (int(pkt[off+1]) + 5) &^ 3
 		}
 
-		source = strings.TrimSuffix(source, ":")
+		source = source[:len(source)-1] // strip right colon
 
-		hreq := HostReq{source, ACK, batch}
 		hreq.source = source
 		hreq.req = ACK
 		hreq.batch = batch
