@@ -181,7 +181,7 @@ func parse_packet(pkt []byte) HostReq {
 		return hreq
 	}
 
-	if rlen&^0x3 != 0 || uint16(rlen/4) != be.Uint16(pkt[V1_PKTLEN:V1_PKTLEN+2]) {
+	if rlen&0x3 != 0 || uint16(rlen/4) != be.Uint16(pkt[V1_PKTLEN:V1_PKTLEN+2]) {
 		log.Printf("E mclient read: pkt length(%v) does not match length field(%v)",
 			rlen, be.Uint16(pkt[V1_PKTLEN:V1_PKTLEN+2])*4)
 		return hreq
