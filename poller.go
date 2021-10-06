@@ -97,7 +97,7 @@ func poll_a_source(source, server string, delay int) {
 
 	// initial delay
 
-	dly := time.Duration((delay*(100-fuzz)+rand.Intn(cli.poll_ivl*60*fuzz)*2)/100) * time.Second
+	dly := time.Duration((delay*(100-fuzz)+rand.Intn(cli.poll_ivl*fuzz)*2)/100) * time.Second
 
 poll_loop:
 
@@ -110,7 +110,7 @@ poll_loop:
 		}
 		time.Sleep(dly)
 
-		dly = time.Duration((cli.poll_ivl*60*(100-fuzz)+rand.Intn(cli.poll_ivl*60*fuzz)*2)/100) * time.Second
+		dly = time.Duration((cli.poll_ivl*(100-fuzz)+rand.Intn(cli.poll_ivl*fuzz)*2)/100) * time.Second
 
 		// get domain data
 

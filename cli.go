@@ -11,10 +11,11 @@ import (
 var cli struct {
 	debug      bool
 	devmode    bool
-	poll_ivl   int // [min]
+	interval   int // [min]
 	mapper_url string
 	stamps     bool
 	// derived
+	poll_ivl int // [s]
 	specs    []string
 	sockname string
 }
@@ -26,7 +27,7 @@ func parse_cli(prog string) {
 	flag.BoolVar(&cli.debug, "debug", false, "print debug information")
 	flag.BoolVar(&cli.devmode, "devmode", false, "development mode, run standalone without connecting to mapper")
 	flag.StringVar(&cli.mapper_url, "m", "unix:///run/ipref/mapper.sock", "mapper url")
-	flag.IntVar(&cli.poll_ivl, "t", 59, "approximate transfer interval in minutes")
+	flag.IntVar(&cli.interval, "t", 59, "approximate transfer interval in minutes")
 	flag.BoolVar(&cli.stamps, "time-stamps", false, "print logs with time stamps")
 	flag.Usage = func() {
 
@@ -76,12 +77,13 @@ func parse_cli(prog string) {
 
 	// validate poll interval
 
-	if cli.poll_ivl < 1 {
-		cli.poll_ivl = 1
+	if cli.interval < 1 {
+		cli.interval = 1
 	}
-	if cli.poll_ivl > 10080 {
-		cli.poll_ivl = 10080 // one week
+	if cli.interval > 10080 {
+		cli.interval = 10080 // one week
 	}
+	cli.poll_ivl = cli.interval * 60
 
 	// validate mapper url
 

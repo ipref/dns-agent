@@ -332,7 +332,7 @@ func mclient_conn() {
 
 	// connect to mapper
 
-	reconn_dly := (cli.poll_ivl * 60) / 7 // mean reconnect delay
+	reconn_dly := cli.poll_ivl / 7 // mean reconnect delay
 	reconnq := make(chan string)
 
 	for inst := uint(1); true; inst++ {
