@@ -124,7 +124,7 @@ func send_host_data(source string) {
 	sreq.recs = make([]AddrRec, 0)
 
 	space := MAXPKTLEN
-	if cli.debug {
+	if cli.devmode {
 		space = 200
 	}
 	space -= V1_HDR_LEN
