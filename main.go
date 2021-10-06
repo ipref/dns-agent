@@ -13,8 +13,7 @@ import (
 )
 
 const (
-	interval_fuzz int = 29  // poll interval variation [%]
-	initial_delay int = 173 // initial max delay [s]
+	fuzz int = 29 // interval variation [%]
 
 	SRVDATAQLEN = 4
 	QRMDATAQLEN = 4
@@ -130,14 +129,21 @@ func main() {
 		sources[local_domain+":"+ipref_domain] = servers
 	}
 
-	// poll data sources
+	// poll data sources, each server poll spread evently across the poll interval
 
 	if len(sources) > 0 {
+
 		for source, servers := range sources {
+
+			offset := (cli.poll_ivl * 60) / len(servers)
+			delay := rand.Intn(offset / 2)
+
 			for _, server := range servers {
-				go poll_a_source(source, server)
+				go poll_a_source(source, server, delay)
+				delay += offset
 			}
 		}
+
 	} else {
 		goexit <- "no valid source specifications"
 	}

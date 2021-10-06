@@ -86,7 +86,7 @@ func send_to_broker(source, server string, hosts map[IprefAddr]Host) {
 	srvdataq <- data
 }
 
-func poll_a_source(source, server string) {
+func poll_a_source(source, server string, delay int) {
 
 	// LOCAL:PUBLIC SERVER:PORT
 
@@ -97,7 +97,7 @@ func poll_a_source(source, server string) {
 
 	// initial delay
 
-	dly := time.Duration(rand.Intn(initial_delay)) * time.Second
+	dly := time.Duration((delay*(100-fuzz)+rand.Intn(cli.poll_ivl*60*fuzz)*2)/100) * time.Second
 
 poll_loop:
 
@@ -110,10 +110,7 @@ poll_loop:
 		}
 		time.Sleep(dly)
 
-		ivl := cli.poll_ivl * 60 * (100 - interval_fuzz)
-		ivl += rand.Intn(cli.poll_ivl*60*interval_fuzz) * 2
-		ivl /= 100
-		dly = time.Duration(ivl) * time.Second
+		dly = time.Duration((cli.poll_ivl*60*(100-fuzz)+rand.Intn(cli.poll_ivl*60*fuzz)*2)/100) * time.Second
 
 		// get domain data
 
