@@ -76,7 +76,7 @@ func send_to_broker(source, server string, hosts map[IprefAddr]Host) {
 
 	if cli.debug {
 
-		log.Printf("server records(%v):  %v at %v  hash[%016x]:\n", len(hosts), data.source, data.server, data.hash)
+		log.Printf("server records:  %v at %v  hash(%v)[%016x]:\n", data.source, data.server, len(hosts), data.hash)
 		for iraddr, host := range data.hosts {
 			log.Printf("|   %-12v  AA  %-16v + %v  =>  %v\n", host.name, iraddr.gw, &iraddr.ref, host.ip)
 		}

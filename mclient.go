@@ -71,9 +71,11 @@ type AddrRec struct {
 }
 
 type SendReq struct {
-	source string
-	batch  uint32
-	recs   []AddrRec
+	cmd     byte
+	source  string
+	qrmhash uint64
+	batch   uint32
+	recs    []AddrRec
 }
 
 var sendreqq chan SendReq
@@ -82,11 +84,7 @@ var pktidq chan uint16
 func print_records(recs []AddrRec) {
 
 	for _, rec := range recs {
-		if rec.ip == 0 {
-			log.Printf("|   removed:  %v + %v", rec.gw, &rec.ref)
-		} else {
-			log.Printf("|   new host: %v + %v  ->  %v", rec.gw, &rec.ref, rec.ip)
-		}
+		log.Printf("|   host: %v + %v  ->  %v", rec.gw, &rec.ref, rec.ip)
 	}
 }
 
@@ -99,73 +97,81 @@ func packet_to_send(req SendReq) []byte {
 	// V1 header
 
 	pkt[V1_VER] = V1_SIG
-	pkt[V1_CMD] = V1_REQ | V1_MC_HOST_DATA
+	pkt[V1_CMD] = req.cmd
 	be.PutUint16(pkt[V1_PKTID:V1_PKTID+2], <-pktidq)
 	pkt[V1_RESERVED] = 0
 	pkt[V1_RESERVED+1] = 0
 
 	off = V1_HDR_LEN
 
-	// see if null request
+	switch pkt[V1_CMD] {
 
-	if len(req.source) == 0 && req.batch == 0 {
+	case V1_DATA | V1_NOOP:
+
+		be.PutUint16(pkt[V1_PKTLEN:V1_PKTLEN+2], uint16(off/4))
+		log.Printf("I SEND null packet")
+
+	case V1_REQ | V1_MC_HOST_DATA:
+
+		// batch id and hash
+
+		be.PutUint32(pkt[off+V1_HOST_DATA_BATCHID:off+V1_HOST_DATA_BATCHID+4], req.batch)
+		be.PutUint64(pkt[off+V1_HOST_DATA_HASH:off+V1_HOST_DATA_HASH+8], req.qrmhash)
+
+		off += V1_HOST_DATA_SOURCE
+
+		// source
+
+		for _, src := range strings.Split(req.source, ":") {
+
+			dnm := []byte(src)
+			dnmlen := len(dnm)
+
+			if 0 < dnmlen && dnmlen < 256 { // should be true since DNS names are shorter than 255 chars
+
+				pkt[off] = V1_TYPE_STRING
+				pkt[off+1] = byte(dnmlen)
+				copy(pkt[off+2:], dnm)
+
+				for off += dnmlen + 2; off&3 != 0; off++ {
+					pkt[off] = 0
+				}
+
+			} else {
+				log.Fatal("F dns name too long(%v): %v", dnmlen, src)
+			}
+		}
+
+		// records
+
+		for _, rec := range req.recs {
+
+			be.PutUint32(pkt[off+V1_AREC_EA:off+V1_AREC_EA+4], uint32(0))
+			be.PutUint32(pkt[off+V1_AREC_IP:off+V1_AREC_IP+4], uint32(rec.ip))
+			be.PutUint32(pkt[off+V1_AREC_GW:off+V1_AREC_GW+4], uint32(rec.gw))
+			be.PutUint64(pkt[off+V1_AREC_REFH:off+V1_AREC_REFH+8], uint64(rec.ref.H))
+			be.PutUint64(pkt[off+V1_AREC_REFL:off+V1_AREC_REFL+8], uint64(rec.ref.L))
+			off += V1_AREC_LEN
+		}
+
+		// send the packet
+
+		if off&3 != 0 {
+			log.Fatal("F payload length not divisible by 4")
+		}
+
+		be.PutUint16(pkt[V1_PKTLEN:V1_PKTLEN+2], uint16(off/4))
+
+		log.Printf("I SEND records:  %v  hash[%016x]  batch [%08x]",
+			req.source, req.qrmhash, req.batch)
+		print_records(req.recs)
+
+	default:
 
 		pkt[V1_CMD] = V1_DATA | V1_NOOP
 		be.PutUint16(pkt[V1_PKTLEN:V1_PKTLEN+2], uint16(off/4))
-		log.Printf("I SEND null packet")
-		return pkt[:off]
+		log.Printf("E SEND null packet due to unknown packet send request")
 	}
-
-	// batch id
-
-	be.PutUint32(pkt[off:off+4], req.batch)
-
-	off += 4
-
-	// source
-
-	for _, src := range strings.Split(req.source, ":") {
-
-		dnm := []byte(src)
-		dnmlen := len(dnm)
-
-		if 0 < dnmlen && dnmlen < 256 { // should be true since DNS names are shorter than 255 chars
-
-			pkt[off] = V1_TYPE_STRING
-			pkt[off+1] = byte(dnmlen)
-			copy(pkt[off+2:], dnm)
-
-			for off += dnmlen + 2; off&3 != 0; off++ {
-				pkt[off] = 0
-			}
-
-		} else {
-			log.Fatal("F dns name too long(%v): %v", dnmlen, src)
-		}
-	}
-
-	// records
-
-	for _, rec := range req.recs {
-
-		be.PutUint32(pkt[off+V1_AREC_EA:off+V1_AREC_EA+4], uint32(0))
-		be.PutUint32(pkt[off+V1_AREC_IP:off+V1_AREC_IP+4], uint32(rec.ip))
-		be.PutUint32(pkt[off+V1_AREC_GW:off+V1_AREC_GW+4], uint32(rec.gw))
-		be.PutUint64(pkt[off+V1_AREC_REFH:off+V1_AREC_REFH+8], uint64(rec.ref.H))
-		be.PutUint64(pkt[off+V1_AREC_REFL:off+V1_AREC_REFL+8], uint64(rec.ref.L))
-		off += V1_AREC_LEN
-	}
-
-	// send the packet
-
-	if off&3 != 0 {
-		log.Fatal("F payload length not divisible by 4")
-	}
-
-	be.PutUint16(pkt[V1_PKTLEN:V1_PKTLEN+2], uint16(off/4))
-
-	log.Printf("I SEND records:  %v  batch [%08x]", req.source, req.batch)
-	print_records(req.recs)
 
 	return pkt[:off]
 }
@@ -206,13 +212,9 @@ payload:
 	case V1_ACK | V1_NOOP:
 	case V1_ACK | V1_MC_HOST_DATA:
 
-		batch = be.Uint32(pkt[off : off+4])
+		batch = be.Uint32(pkt[off+V1_HOST_DATA_BATCHID : off+V1_HOST_DATA_BATCHID+4])
 
-		fallthrough
-
-	case V1_DATA | V1_GET_HOST_DATA:
-
-		off += 4
+		off += V1_HOST_DATA_SOURCE
 
 		for ix := 0; ix < 2; ix++ {
 
@@ -237,10 +239,6 @@ payload:
 		hreq.req = ACK
 		hreq.batch = batch
 
-		if batch == 0 {
-			hreq.req = RESEND
-		}
-
 	default:
 		log.Printf("E mclient read: unknown pkt type[%02x]", pkt[V1_CMD])
 	}
@@ -261,7 +259,7 @@ func mclient_read(inst uint, conn *net.UnixConn, connerr chan<- string) {
 		if err != nil {
 			log.Printf("E mclient read instance(%v) io error: %v", inst, err)
 			conn.Close()
-			sendreqq <- SendReq{"", 0, []AddrRec{}} // force send which will cause mclient write to exit
+			sendreqq <- SendReq{V1_DATA | V1_NOOP, "", 0, 0, []AddrRec{}} // force send which will cause mclient write to exit
 			break
 		}
 
@@ -309,7 +307,7 @@ func mclient_conn() {
 
 			for req := range sendreqq {
 
-				log.Printf("I SEND records:  %v  batch [%08x]", req.source, req.batch)
+				log.Printf("I SEND records:  %v  hash[%016x]  batch [%08x]", req.source, req.qrmhash, req.batch)
 				print_records(req.recs)
 				if rnum := rand.Intn(10); rnum < 7 { // send ACK but not always
 					hostreq(req.source, ACK, req.batch, 919*time.Millisecond)
@@ -371,7 +369,8 @@ func mclient_conn() {
 		for { // wait while draining sendreqq
 			select {
 			case req := <-sendreqq:
-				log.Printf("I DISCARD records:  %v  batch [%08x], no connection to mapper", req.source, req.batch)
+				log.Printf("I DISCARD records:  %v  hash[%016x]  batch[%08x], no connection to mapper",
+					req.source, req.qrmhash, req.batch)
 				print_records(req.recs)
 			case <-reconnq:
 				break drain

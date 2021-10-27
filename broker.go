@@ -62,16 +62,17 @@ type Host struct {
 	name string
 }
 
-type HostStatus struct {
-	Host
+type Status struct {
 	state int
 	batch uint32 // batch id to match acks
 }
 
 type HostData struct {
 	source  string
-	qrmhash uint64 // current quorum hash
-	hstat   map[IprefAddr]HostStatus
+	qrmhash uint64 // quorum hash
+	allsent bool   // all data sent to mapper
+	hosts   map[IprefAddr]Host
+	stat    map[IprefAddr]Status
 }
 
 type AggData struct { // data from all servers for a source
@@ -92,7 +93,7 @@ var be = binary.BigEndian
 
 var sources map[string][]string  // source -> [server1:port, server2:port, ...]
 var aggdata map[string]AggData   // source -> aggdata -> srvdata
-var hostdata map[string]HostData // source -> host status
+var hostdata map[string]HostData // source -> host data/status
 
 var srvdataq chan SrvData
 var qrmdataq chan SrvData
@@ -119,7 +120,9 @@ func send_host_data(source string) {
 
 	var sreq SendReq
 
+	sreq.cmd = V1_REQ | V1_MC_HOST_DATA
 	sreq.source = source
+	sreq.qrmhash = hdata.qrmhash
 	sreq.batch = new_batchid()
 	sreq.recs = make([]AddrRec, 0)
 
@@ -129,6 +132,7 @@ func send_host_data(source string) {
 	}
 	space -= V1_HDR_LEN
 	space -= 4                     // batch id
+	space -= 8                     // hash
 	space -= len(sreq.source) + 10 // source string plus possible padding
 
 	if space < V1_AREC_LEN {
@@ -136,11 +140,13 @@ func send_host_data(source string) {
 	}
 
 	if cli.debug {
-		log.Printf("scanning for records to send  %v  batch[%08x]",
-			hdata.source, sreq.batch)
+		log.Printf("scanning for records to send  %v  hash[%016x]  batch[%08x]",
+			hdata.source, sreq.qrmhash, sreq.batch)
 	}
 
-	for iraddr, hs := range hdata.hstat {
+	for iraddr, hs := range hdata.stat {
+
+		host := hdata.hosts[iraddr]
 
 		if cli.debug {
 			statestr := "UNK"
@@ -153,7 +159,7 @@ func send_host_data(source string) {
 				statestr = "SENT"
 			}
 			log.Printf("|   %-5v   %-12v  AA  %-16v + %v  =>  %v",
-				statestr, hs.name, iraddr.gw, &iraddr.ref, hs.ip)
+				statestr, host.name, iraddr.gw, &iraddr.ref, host.ip)
 		}
 
 		if hs.state == NEW {
@@ -161,9 +167,9 @@ func send_host_data(source string) {
 			hs.state = SENT
 			hs.batch = sreq.batch
 
-			hdata.hstat[iraddr] = hs
+			hdata.stat[iraddr] = hs
 
-			sreq.recs = append(sreq.recs, AddrRec{hs.ip, iraddr.gw, iraddr.ref})
+			sreq.recs = append(sreq.recs, AddrRec{host.ip, iraddr.gw, iraddr.ref})
 
 			if space -= V1_AREC_LEN; space < V1_AREC_LEN {
 				break
@@ -176,6 +182,11 @@ func send_host_data(source string) {
 		sendreqq <- sreq
 		hostreq(source, SEND, 0, DLY_SEND)
 		hostreq(sreq.source, EXPIRE, sreq.batch, DLY_EXPIRE)
+
+	} else {
+
+		hdata.allsent = true
+		hostdata[source] = hdata
 	}
 }
 
@@ -183,19 +194,13 @@ func ack_hosts(source string, batch uint32) {
 
 	hdata, ok := hostdata[source]
 
-	log.Printf("I ACK records:  %v  batch [%08x]", source, batch)
+	log.Printf("I ACK records:  %v  hash[%016x]  batch[%08x]", source, hdata.qrmhash, batch)
 
 	if ok {
-		for iraddr, hs := range hdata.hstat {
+		for iraddr, hs := range hdata.stat {
 			if hs.batch == batch && hs.state == SENT {
-				if hs.ip == 0 {
-					//log.Printf("|   removed:  %v + %v", iraddr.gw, &iraddr.ref)
-					delete(hdata.hstat, iraddr)
-				} else {
-					hs.state = ACKED
-					hdata.hstat[iraddr] = hs
-					//log.Printf("|   new host: %v + %v  ->  %v", iraddr.gw, &iraddr.ref, hs.ip)
-				}
+				hs.state = ACKED
+				hdata.stat[iraddr] = hs
 			}
 		}
 	}
@@ -209,17 +214,17 @@ func expire_host_acks(source string, batch uint32) {
 	resend := false
 
 	if ok {
-		for iraddr, hs := range hdata.hstat {
+		for iraddr, hs := range hdata.stat {
 			if hs.batch == batch && hs.state == SENT {
 				hs.state = NEW
-				hdata.hstat[iraddr] = hs
+				hdata.stat[iraddr] = hs
 				resend = true
 			}
 		}
 	}
 
 	if resend {
-		log.Printf("W unacknowledged:  %v  batch [%08x], resending", source, batch)
+		log.Printf("W unacknowledged:  %v  hash[%016x]  batch[%08x], resending", source, hdata.qrmhash, batch)
 		hostreq(source, SEND, 0, DLY_SEND)
 	}
 }
@@ -231,11 +236,15 @@ func resend_host_data(source string) {
 	log.Printf("I RESEND request:  %v, resending", source)
 
 	if ok {
-		for iraddr, hs := range hdata.hstat {
+		for iraddr, hs := range hdata.stat {
 			hs.state = NEW
-			hdata.hstat[iraddr] = hs
+			hs.batch = 0
+			hdata.stat[iraddr] = hs
 		}
 	}
+
+	hdata.allsent = false
+	hostdata[source] = hdata
 
 	hostreq(source, SEND, 0, DLY_SEND)
 }
@@ -243,50 +252,30 @@ func resend_host_data(source string) {
 // new quorum data coming from aggregation
 func new_qrmdata(qdata SrvData) {
 
-	hdata, ok := hostdata[qdata.source]
-	if !ok {
-		hdata.source = qdata.source
-		hdata.hstat = make(map[IprefAddr]HostStatus)
-		hostdata[qdata.source] = hdata
-	}
+	log.Printf("I new quorum:  %v  hash(%v)[%016x]", qdata.source, len(qdata.hosts), qdata.hash)
 
-	if hdata.qrmhash == qdata.hash {
-		return // nothing new
-	}
+	//if cli.debug {
+	//	for iraddr, host := range qdata.hosts {
+	//		log.Printf("|   %-12v  AA  %-16v + %v  =>  %v\n", host.name, iraddr.gw, &iraddr.ref, host.ip)
+	//	}
+	//}
 
-	if cli.debug {
-		log.Printf("accepted quorum records(%v) from %v hash[%016x]", len(qdata.hosts), qdata.source, qdata.hash)
-		for iraddr, host := range qdata.hosts {
-			log.Printf("|   %-12v  AA  %-16v + %v  =>  %v\n", host.name, iraddr.gw, &iraddr.ref, host.ip)
-		}
-	}
+	var hdata HostData
 
-	// find hosts to remove
-
-	for iraddr, hs := range hdata.hstat {
-		_, ok := qdata.hosts[iraddr]
-		if !ok {
-			hs.ip = 0 // ip == 0 means remove the host
-			hs.batch = 0
-			hs.state = NEW
-			hdata.hstat[iraddr] = hs
-		}
-	}
-
-	// add or update hosts
-
-	for iraddr, host := range qdata.hosts {
-		hs, ok := hdata.hstat[iraddr]
-		if !ok || hs.ip != host.ip || hs.name != host.name {
-			hs.ip = host.ip
-			hs.name = host.name
-			hs.batch = 0
-			hs.state = NEW
-		}
-		hdata.hstat[iraddr] = hs
-	}
-
+	hdata.source = qdata.source
 	hdata.qrmhash = qdata.hash
+	hdata.allsent = false
+	hdata.hosts = qdata.hosts
+	hdata.stat = make(map[IprefAddr]Status)
+
+	// add host status
+
+	for iraddr, _ := range qdata.hosts {
+
+		hdata.stat[iraddr] = Status{NEW, 0}
+	}
+
+	hostdata[qdata.source] = hdata
 
 	hostreq(hdata.source, SEND, 0, DLY_SEND)
 }
@@ -304,7 +293,7 @@ func new_srvdata(data SrvData) {
 		agg.srvdata = make(map[string]SrvData)
 		aggdata[data.source] = agg
 
-		log.Printf("I source  %v  quorum %v of %v:", agg.source, agg.quorum, len(sources[data.source]))
+		log.Printf("I source  %v  quorum %v out of %v:", agg.source, agg.quorum, len(sources[data.source]))
 		for _, server := range sources[data.source] {
 			log.Printf("|   %v", server)
 		}
