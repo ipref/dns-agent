@@ -33,6 +33,11 @@ const ( // v1 constants
 	V1_AREC_GW   = 8
 	V1_AREC_REFH = 12
 	V1_AREC_REFL = 20
+	// v1 host data offsets
+	V1_HOST_DATA_BATCHID = 0
+	V1_HOST_DATA_COUNT   = 0
+	V1_HOST_DATA_HASH    = 4
+	V1_HOST_DATA_SOURCE  = 12
 )
 
 const ( // v1 item types
@@ -46,9 +51,9 @@ const ( // v1 item types
 
 const ( // v1 commands
 
-	V1_NOOP          = 0
-	V1_MC_HOST_DATA  = 14
-	V1_GET_HOST_DATA = 15
+	V1_NOOP              = 0
+	V1_MC_HOST_DATA      = 14
+	V1_MC_HOST_DATA_HASH = 15
 )
 
 const ( // v1 command mode, top two bits
