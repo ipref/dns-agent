@@ -63,9 +63,8 @@ func send_to_broker(source, server string, hosts map[IprefAddr]Host) {
 		host := hosts[iraddr]
 
 		be.PutUint32(buf[:4], uint32(host.ip))
-		hash.Write(buf[:4])
-		be.PutUint32(buf[:4], uint32(iraddr.gw))
-		hash.Write(buf[:4])
+		be.PutUint32(buf[4:], uint32(iraddr.gw))
+		hash.Write(buf)
 		be.PutUint64(buf, iraddr.ref.H)
 		hash.Write(buf)
 		be.PutUint64(buf, iraddr.ref.L)
