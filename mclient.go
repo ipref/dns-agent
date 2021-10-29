@@ -162,15 +162,15 @@ func packet_to_send(req SendReq) []byte {
 
 		be.PutUint16(pkt[V1_PKTLEN:V1_PKTLEN+2], uint16(off/4))
 
-		log.Printf("I SEND records:  %v  hash[%016x]  batch [%08x]",
-			req.source, req.qrmhash, req.batch)
+		log.Printf("I SEND records(%v):  %v  hash[%016x]  batch [%08x]",
+			len(req.recs), req.source, req.qrmhash, req.batch)
 		print_records(req.recs)
 
 	default:
 
 		pkt[V1_CMD] = V1_DATA | V1_NOOP
 		be.PutUint16(pkt[V1_PKTLEN:V1_PKTLEN+2], uint16(off/4))
-		log.Printf("E SEND null packet due to unknown packet send request")
+		log.Printf("E SEND null packet due to unknown send request")
 	}
 
 	return pkt[:off]
@@ -307,7 +307,8 @@ func mclient_conn() {
 
 			for req := range sendreqq {
 
-				log.Printf("I SEND records:  %v  hash[%016x]  batch [%08x]", req.source, req.qrmhash, req.batch)
+				log.Printf("I SEND records(%v):  %v  hash[%016x]  batch [%08x]",
+					len(req.recs), req.source, req.qrmhash, req.batch)
 				print_records(req.recs)
 				if rnum := rand.Intn(10); rnum < 7 { // send ACK but not always
 					hostreq(req.source, ACK, req.batch, 919*time.Millisecond)

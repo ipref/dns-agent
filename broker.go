@@ -192,18 +192,22 @@ func send_host_data(source string) {
 
 func ack_hosts(source string, batch uint32) {
 
-	hdata, ok := hostdata[source]
+	count := 0
 
-	log.Printf("I ACK records:  %v  hash[%016x]  batch[%08x]", source, hdata.qrmhash, batch)
+	hdata, ok := hostdata[source]
 
 	if ok {
 		for iraddr, hs := range hdata.stat {
 			if hs.batch == batch && hs.state == SENT {
 				hs.state = ACKED
 				hdata.stat[iraddr] = hs
+				count++
 			}
 		}
 	}
+
+	log.Printf("I ACK records(%v):  %v  hash[%016x]  batch[%08x]",
+		count, source, hdata.qrmhash, batch)
 }
 
 // sent and ack should have come by now, re-send if not
