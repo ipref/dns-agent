@@ -294,6 +294,7 @@ func new_srvdata(data SrvData) {
 	if !ok {
 		agg.source = data.source
 		agg.quorum = len(sources[data.source])/2 + 1
+		agg.qrmhash = data.hash ^ 1 // guarantee mismatch with server hash
 		agg.srvdata = make(map[string]SrvData)
 		aggdata[data.source] = agg
 
@@ -319,6 +320,7 @@ func new_srvdata(data SrvData) {
 			if srv.hash != agg.qrmhash {
 				// new server data reached quorum
 				agg.qrmhash = srv.hash
+				aggdata[data.source] = agg
 				qrmdataq <- srv
 			}
 			break
