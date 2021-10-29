@@ -158,7 +158,7 @@ func send_host_data(source string) {
 			case SENT:
 				statestr = "SENT"
 			}
-			log.Printf("|   %-5v   %-12v  AA  %-16v + %v  =>  %v",
+			log.Printf(":   %-5v   %-12v  AA  %-16v + %v  =>  %v",
 				statestr, host.name, iraddr.gw, &iraddr.ref, host.ip)
 		}
 
@@ -256,7 +256,7 @@ func new_qrmdata(qdata SrvData) {
 
 	//if cli.debug {
 	//	for iraddr, host := range qdata.hosts {
-	//		log.Printf("|   %-12v  AA  %-16v + %v  =>  %v\n", host.name, iraddr.gw, &iraddr.ref, host.ip)
+	//		log.Printf(":   %-12v  AA  %-16v + %v  =>  %v\n", host.name, iraddr.gw, &iraddr.ref, host.ip)
 	//	}
 	//}
 
@@ -295,7 +295,7 @@ func new_srvdata(data SrvData) {
 
 		log.Printf("I source  %v  quorum %v out of %v:", agg.source, agg.quorum, len(sources[data.source]))
 		for _, server := range sources[data.source] {
-			log.Printf("|   %v", server)
+			log.Printf(":   %v", server)
 		}
 	}
 

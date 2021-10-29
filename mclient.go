@@ -84,7 +84,7 @@ var pktidq chan uint16
 func print_records(recs []AddrRec) {
 
 	for _, rec := range recs {
-		log.Printf("|   host: %v + %v  ->  %v", rec.gw, &rec.ref, rec.ip)
+		log.Printf(":   host: %v + %v  ->  %v", rec.gw, &rec.ref, rec.ip)
 	}
 }
 
