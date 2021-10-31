@@ -6,6 +6,7 @@ import (
 	"encoding/binary"
 	"github.com/ipref/ref"
 	"log"
+	"math/rand"
 	"net"
 	"time"
 )
@@ -28,9 +29,11 @@ const ( // host request codes
 
 	NULL = iota
 	SEND
+	SEND_HASH
 	ACK
+	ACK_HASH
+	NACK_HASH
 	EXPIRE
-	RESEND
 )
 
 const (
@@ -47,9 +50,10 @@ func (ip IP32) String() string {
 }
 
 type HostReq struct {
-	source string
-	req    int
-	batch  uint32
+	req     int
+	source  string
+	batch   uint32 // holds count for HOST_DATA_HASH
+	qrmhash uint64
 }
 
 type IprefAddr struct {
@@ -70,7 +74,6 @@ type Status struct {
 type HostData struct {
 	source  string
 	qrmhash uint64 // quorum hash
-	allsent bool   // all data sent to mapper
 	hosts   map[IprefAddr]Host
 	stat    map[IprefAddr]Status
 }
@@ -100,13 +103,64 @@ var qrmdataq chan SrvData
 var hostreqq chan HostReq
 
 // make a host request
+func hostreq(req int, source string, batch uint32, qrmhash uint64, dly time.Duration) {
 
-func hostreq(source string, req int, batch uint32, dly time.Duration) {
+	hreq := HostReq{req, source, batch, qrmhash}
 
-	go func(source string, req int, batch uint32, dly time.Duration) {
+	go func(req HostReq, dly time.Duration) {
 		time.Sleep(dly)
-		hostreqq <- HostReq{source, req, batch}
-	}(source, req, batch, dly)
+		hostreqq <- req
+	}(hreq, dly)
+}
+
+func send_hash(source string) {
+
+	// send hash to mapper slightly more frequently than the poll time
+
+	dly := time.Duration((cli.poll_ivl*90)/100+rand.Intn((cli.poll_ivl*10)/100)) * time.Second
+	hostreq(SEND_HASH, source, 0, 0, dly)
+
+	// send hash only if all sent and acknowledged
+
+	hdata, ok := hostdata[source]
+
+	if !ok {
+		return
+	}
+
+	for _, hs := range hdata.stat {
+
+		if hs.state != ACKED {
+			return
+		}
+	}
+
+	var sreq SendReq
+
+	sreq.cmd = V1_REQ | V1_MC_HOST_DATA_HASH
+	sreq.source = source
+	sreq.qrmhash = hdata.qrmhash
+	sreq.batch = uint32(len(hdata.hosts))
+	sreq.recs = nil
+
+	sendreqq <- sreq
+}
+
+func nack_hash(source string, count uint32, qrmhash uint64) {
+
+	hdata, ok := hostdata[source]
+
+	log.Printf("I NACK HASH:  %v  hash(%v)[%016x], resending", source, count, qrmhash)
+
+	if ok {
+		for iraddr, hs := range hdata.stat {
+			hs.state = NEW
+			hs.batch = 0
+			hdata.stat[iraddr] = hs
+		}
+	}
+
+	hostreq(SEND, source, 0, 0, DLY_SEND)
 }
 
 func send_host_data(source string) {
@@ -148,20 +202,6 @@ func send_host_data(source string) {
 
 		host := hdata.hosts[iraddr]
 
-		if cli.debug {
-			statestr := "UNK"
-			switch hs.state {
-			case NEW:
-				statestr = "NEW"
-			case ACKED:
-				statestr = "ACKED"
-			case SENT:
-				statestr = "SENT"
-			}
-			log.Printf(":   %-5v   %-12v  AA  %-16v + %v  =>  %v",
-				statestr, host.name, iraddr.gw, &iraddr.ref, host.ip)
-		}
-
 		if hs.state == NEW {
 
 			hs.state = SENT
@@ -180,23 +220,20 @@ func send_host_data(source string) {
 	if len(sreq.recs) > 0 {
 
 		sendreqq <- sreq
-		hostreq(source, SEND, 0, DLY_SEND)
-		hostreq(sreq.source, EXPIRE, sreq.batch, DLY_EXPIRE)
+		hostreq(SEND, source, 0, 0, DLY_SEND)
+		hostreq(EXPIRE, sreq.source, sreq.batch, sreq.qrmhash, DLY_EXPIRE)
 
-	} else {
-
-		hdata.allsent = true
-		hostdata[source] = hdata
 	}
 }
 
-func ack_hosts(source string, batch uint32) {
-
-	count := 0
+func ack_hosts(source string, qrmhash uint64, batch uint32) {
 
 	hdata, ok := hostdata[source]
 
-	if ok {
+	if ok && hdata.qrmhash == qrmhash {
+
+		count := 0
+
 		for iraddr, hs := range hdata.stat {
 			if hs.batch == batch && hs.state == SENT {
 				hs.state = ACKED
@@ -204,20 +241,22 @@ func ack_hosts(source string, batch uint32) {
 				count++
 			}
 		}
+
+		log.Printf("I ACK records(%v):  %v  hash[%016x]  batch[%08x]",
+			count, source, qrmhash, batch)
 	}
 
-	log.Printf("I ACK records(%v):  %v  hash[%016x]  batch[%08x]",
-		count, source, hdata.qrmhash, batch)
 }
 
 // sent and ack should have come by now, re-send if not
-func expire_host_acks(source string, batch uint32) {
+func expire_host_acks(source string, qrmhash uint64, batch uint32) {
 
 	hdata, ok := hostdata[source]
 
-	resend := false
+	if ok && hdata.qrmhash == qrmhash {
 
-	if ok {
+		resend := false
+
 		for iraddr, hs := range hdata.stat {
 			if hs.batch == batch && hs.state == SENT {
 				hs.state = NEW
@@ -225,32 +264,13 @@ func expire_host_acks(source string, batch uint32) {
 				resend = true
 			}
 		}
-	}
 
-	if resend {
-		log.Printf("W unacknowledged:  %v  hash[%016x]  batch[%08x], resending", source, hdata.qrmhash, batch)
-		hostreq(source, SEND, 0, DLY_SEND)
-	}
-}
-
-func resend_host_data(source string) {
-
-	hdata, ok := hostdata[source]
-
-	log.Printf("I RESEND request:  %v, resending", source)
-
-	if ok {
-		for iraddr, hs := range hdata.stat {
-			hs.state = NEW
-			hs.batch = 0
-			hdata.stat[iraddr] = hs
+		if resend {
+			log.Printf("W unacknowledged:  %v  hash[%016x]  batch[%08x], resending",
+				source, hdata.qrmhash, batch)
+			hostreq(SEND, source, 0, 0, DLY_SEND)
 		}
 	}
-
-	hdata.allsent = false
-	hostdata[source] = hdata
-
-	hostreq(source, SEND, 0, DLY_SEND)
 }
 
 // new quorum data coming from aggregation
@@ -258,17 +278,10 @@ func new_qrmdata(qdata SrvData) {
 
 	log.Printf("I new quorum:  %v  hash(%v)[%016x]", qdata.source, len(qdata.hosts), qdata.hash)
 
-	//if cli.debug {
-	//	for iraddr, host := range qdata.hosts {
-	//		log.Printf(":   %-12v  AA  %-16v + %v  =>  %v\n", host.name, iraddr.gw, &iraddr.ref, host.ip)
-	//	}
-	//}
-
 	var hdata HostData
 
 	hdata.source = qdata.source
 	hdata.qrmhash = qdata.hash
-	hdata.allsent = false
 	hdata.hosts = qdata.hosts
 	hdata.stat = make(map[IprefAddr]Status)
 
@@ -281,7 +294,7 @@ func new_qrmdata(qdata SrvData) {
 
 	hostdata[qdata.source] = hdata
 
-	hostreq(hdata.source, SEND, 0, DLY_SEND)
+	hostreq(SEND, qdata.source, 0, 0, DLY_SEND)
 }
 
 // new server data coming from pollers
@@ -302,6 +315,8 @@ func new_srvdata(data SrvData) {
 		for _, server := range sources[data.source] {
 			log.Printf(":   %v", server)
 		}
+
+		hostreq(SEND_HASH, agg.source, 0, 0, DLY_SEND)
 	}
 
 	agg.srvdata[data.server] = data
@@ -339,25 +354,18 @@ func broker() {
 		case req := <-hostreqq:
 			switch req.req {
 			case SEND:
-				if cli.debug {
-					log.Printf("hostreqq:  %v  SEND records to mapper", req.source)
-				}
 				send_host_data(req.source)
 			case ACK:
-				if cli.debug {
-					log.Printf("hostreqq:  %v  ACK batch[%08x] from mapper", req.source, req.batch)
-				}
-				ack_hosts(req.source, req.batch)
+				ack_hosts(req.source, req.qrmhash, req.batch)
 			case EXPIRE:
-				if cli.debug {
-					log.Printf("hostreqq:  %v  EXPIRE batch[%08x] from timer", req.source, req.batch)
-				}
-				expire_host_acks(req.source, req.batch)
-			case RESEND:
-				if cli.debug {
-					log.Printf("hostreqq:  %v  RESEND records to mapper", req.source)
-				}
-				resend_host_data(req.source)
+				expire_host_acks(req.source, req.qrmhash, req.batch)
+			case SEND_HASH:
+				send_hash(req.source)
+			case ACK_HASH:
+				log.Printf("I ACK HASH:  %v  hash(%v)[%016x]",
+					req.source, req.batch, req.qrmhash)
+			case NACK_HASH:
+				nack_hash(req.source, req.batch, req.qrmhash)
 			case NULL:
 				if cli.debug {
 					log.Printf("hostreqq:  NULL")

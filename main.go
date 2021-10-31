@@ -50,9 +50,9 @@ func main() {
 
 	parse_cli(prog)
 
-	log.Printf("starting %v\n", prog)
+	log.Printf("I starting %v\n", prog)
 
-	goexit = make(chan string, 1)
+	goexit = make(chan string)
 	go catch_signals()
 
 	rand.Seed(time.Now().UnixNano())
@@ -147,5 +147,5 @@ func main() {
 	}
 
 	msg := <-goexit
-	log.Printf("exiting %v: %v", prog, msg)
+	log.Printf("I exiting %v: %v", prog, msg)
 }

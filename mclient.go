@@ -88,6 +88,34 @@ func print_records(recs []AddrRec) {
 	}
 }
 
+// helper function, pkt space must be guaranteed by the caller
+func insert_source(source string, pkt []byte) int {
+
+	off := 0
+
+	for _, src := range strings.Split(source, ":") {
+
+		dnm := []byte(src)
+		dnmlen := len(dnm)
+
+		if 0 < dnmlen && dnmlen < 256 { // should be true since DNS names are shorter than 255 chars
+
+			pkt[off] = V1_TYPE_STRING
+			pkt[off+1] = byte(dnmlen)
+			copy(pkt[off+2:], dnm)
+
+			for off += dnmlen + 2; off&3 != 0; off++ {
+				pkt[off] = 0
+			}
+
+		} else {
+			log.Fatal("F dns name too long(%v): %v", dnmlen, src)
+		}
+	}
+
+	return off
+}
+
 func packet_to_send(req SendReq) []byte {
 
 	var off int
@@ -122,25 +150,7 @@ func packet_to_send(req SendReq) []byte {
 
 		// source
 
-		for _, src := range strings.Split(req.source, ":") {
-
-			dnm := []byte(src)
-			dnmlen := len(dnm)
-
-			if 0 < dnmlen && dnmlen < 256 { // should be true since DNS names are shorter than 255 chars
-
-				pkt[off] = V1_TYPE_STRING
-				pkt[off+1] = byte(dnmlen)
-				copy(pkt[off+2:], dnm)
-
-				for off += dnmlen + 2; off&3 != 0; off++ {
-					pkt[off] = 0
-				}
-
-			} else {
-				log.Fatal("F dns name too long(%v): %v", dnmlen, src)
-			}
-		}
+		off += insert_source(req.source, pkt[off:])
 
 		// records
 
@@ -166,19 +176,69 @@ func packet_to_send(req SendReq) []byte {
 			len(req.recs), req.source, req.qrmhash, req.batch)
 		print_records(req.recs)
 
+	case V1_REQ | V1_MC_HOST_DATA_HASH:
+
+		// count and hash
+
+		be.PutUint32(pkt[off+V1_HOST_DATA_COUNT:off+V1_HOST_DATA_COUNT+4], req.batch)
+		be.PutUint64(pkt[off+V1_HOST_DATA_HASH:off+V1_HOST_DATA_HASH+8], req.qrmhash)
+
+		off += V1_HOST_DATA_SOURCE
+
+		// source
+
+		off += insert_source(req.source, pkt[off:])
+
+		// send the packet
+
+		if off&3 != 0 {
+			log.Fatal("F payload length not divisible by 4")
+		}
+
+		be.PutUint16(pkt[V1_PKTLEN:V1_PKTLEN+2], uint16(off/4))
+
+		log.Printf("I SEND HASH:  %v  hash(%v)[%016x]", req.source, req.batch, req.qrmhash)
+
 	default:
 
 		pkt[V1_CMD] = V1_DATA | V1_NOOP
 		be.PutUint16(pkt[V1_PKTLEN:V1_PKTLEN+2], uint16(off/4))
-		log.Printf("E SEND null packet due to unknown send request")
+		log.Printf("E SEND null packet in lieu of an unknown send request")
 	}
 
 	return pkt[:off]
 }
 
+// helper function, caller must validate packet
+func parse_source(pkt []byte) (string, int, error) {
+
+	off := 0
+	source := ""
+	rlen := len(pkt)
+
+	for ix := 0; ix < 2; ix++ {
+
+		if rlen <= off+4 {
+			return "", 0, errors.New("invalid source string")
+		}
+
+		if pkt[off] != V1_TYPE_STRING || rlen < (off+int(pkt[off+1])+5)&^3 {
+			return "", 0, errors.New("invalid source string length")
+		}
+
+		source += string(pkt[off+2:off+2+int(pkt[off+1])]) + ":"
+
+		off += (int(pkt[off+1]) + 5) &^ 3
+	}
+
+	source = source[:len(source)-1] // strip right colon
+
+	return source, off, nil
+}
+
 func parse_packet(pkt []byte) HostReq {
 
-	hreq := HostReq{"", NULL, 0}
+	hreq := HostReq{NULL, "", 0, 0}
 	rlen := len(pkt)
 
 	// validate pkt format
@@ -202,42 +262,51 @@ func parse_packet(pkt []byte) HostReq {
 	// pkt payload
 
 	var source string
-	var batch uint32
+	var err error
 
 	off := V1_HDR_LEN
 
-payload:
 	switch pkt[V1_CMD] {
 	case V1_DATA | V1_NOOP:
 	case V1_ACK | V1_NOOP:
 	case V1_ACK | V1_MC_HOST_DATA:
 
-		batch = be.Uint32(pkt[off+V1_HOST_DATA_BATCHID : off+V1_HOST_DATA_BATCHID+4])
+		hreq.batch = be.Uint32(pkt[off+V1_HOST_DATA_BATCHID : off+V1_HOST_DATA_BATCHID+4])
+		hreq.qrmhash = be.Uint64(pkt[off+V1_HOST_DATA_HASH : off+V1_HOST_DATA_HASH+8])
 
 		off += V1_HOST_DATA_SOURCE
 
-		for ix := 0; ix < 2; ix++ {
+		source, _, err = parse_source(pkt[off:])
 
-			if rlen <= off+4 {
-				log.Printf("E mclient read: invalid source string, dropping packet")
-				break payload
-			}
-
-			if pkt[off] != V1_TYPE_STRING || rlen < (off+int(pkt[off+1])+5)&^3 {
-				log.Printf("E mclient read: invalid source string length, dropping packet")
-				break payload
-			}
-
-			source += string(pkt[off+2:off+2+int(pkt[off+1])]) + ":"
-
-			off += (int(pkt[off+1]) + 5) &^ 3
+		if err == nil {
+			hreq.source = source
+			hreq.req = ACK
+		} else {
+			log.Printf("E mclient read: %v, dropping packet", err)
 		}
 
-		source = source[:len(source)-1] // strip right colon
+	case V1_ACK | V1_MC_HOST_DATA_HASH, V1_NACK | V1_MC_HOST_DATA_HASH:
 
-		hreq.source = source
-		hreq.req = ACK
-		hreq.batch = batch
+		hreq.batch = be.Uint32(pkt[off+V1_HOST_DATA_COUNT : off+V1_HOST_DATA_COUNT+4])
+		hreq.qrmhash = be.Uint64(pkt[off+V1_HOST_DATA_HASH : off+V1_HOST_DATA_HASH+8])
+
+		off += V1_HOST_DATA_SOURCE
+
+		source, _, err = parse_source(pkt[off:])
+
+		if err == nil {
+			hreq.source = source
+			switch pkt[V1_CMD] & 0xc0 {
+			case V1_ACK:
+				hreq.req = ACK_HASH
+			case V1_NACK:
+				hreq.req = NACK_HASH
+			default:
+				log.Printf("E mclient read: invalid pkt type[%02x], dropping packet", pkt[V1_CMD])
+			}
+		} else {
+			log.Printf("E mclient read: %v, dropping packet", err)
+		}
 
 	default:
 		log.Printf("E mclient read: unknown pkt type[%02x]", pkt[V1_CMD])
@@ -307,11 +376,25 @@ func mclient_conn() {
 
 			for req := range sendreqq {
 
-				log.Printf("I SEND records(%v):  %v  hash[%016x]  batch [%08x]",
-					len(req.recs), req.source, req.qrmhash, req.batch)
-				print_records(req.recs)
-				if rnum := rand.Intn(10); rnum < 7 { // send ACK but not always
-					hostreq(req.source, ACK, req.batch, 919*time.Millisecond)
+				switch req.cmd {
+
+				case V1_REQ | V1_MC_HOST_DATA:
+
+					log.Printf("I SEND records(%v) (devmode):  %v  hash[%016x]  batch [%08x]",
+						len(req.recs), req.source, req.qrmhash, req.batch)
+					print_records(req.recs)
+					if rnum := rand.Intn(10); rnum < 7 { // send ACK but not always
+						hostreq(ACK, req.source, req.batch, req.qrmhash, 919*time.Millisecond)
+					}
+
+				case V1_REQ | V1_MC_HOST_DATA_HASH:
+
+					log.Printf("I SEND HASH (devmode):  %v  hash(%v)[%016x]",
+						req.source, req.batch, req.qrmhash)
+
+				default:
+
+					log.Printf("I SEND something else (devmode):  cmd[%02x]", req.cmd)
 				}
 			}
 		}()
@@ -369,11 +452,28 @@ func mclient_conn() {
 	drain:
 		for { // wait while draining sendreqq
 			select {
+
 			case req := <-sendreqq:
-				log.Printf("I DISCARD records:  %v  hash[%016x]  batch[%08x], no connection to mapper",
-					req.source, req.qrmhash, req.batch)
-				print_records(req.recs)
+
+				switch req.cmd {
+
+				case V1_REQ | V1_MC_HOST_DATA:
+
+					log.Printf("I DISCARD records:  %v  hash[%016x]  batch[%08x], no connection to mapper",
+						req.source, req.qrmhash, req.batch)
+
+				case V1_REQ | V1_MC_HOST_DATA_HASH:
+
+					log.Printf("I DISCARD hash:  %v  hash(%v)[%016x], no connection to mapper",
+						req.source, req.batch, req.qrmhash)
+
+				default:
+
+					log.Printf("I DISCARD packet (devmode):  cmd[%02x]", req.cmd)
+				}
+
 			case <-reconnq:
+
 				break drain
 			}
 		}
