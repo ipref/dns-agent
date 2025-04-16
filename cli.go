@@ -12,6 +12,8 @@ var cli struct {
 	debug      bool
 	devmode    bool
 	interval   int // [min]
+	ea_ipver   int
+	gw_ipver   int
 	mapper_url string
 	stamps     bool
 	// derived
@@ -26,6 +28,8 @@ func parse_cli(prog string) {
 
 	flag.BoolVar(&cli.debug, "debug", false, "print debug information")
 	flag.BoolVar(&cli.devmode, "devmode", false, "development mode, run standalone without connecting to mapper")
+	flag.IntVar(&cli.ea_ipver, "ea-ipver", 4, "IP version for local addresses (4 or 6)")
+	flag.IntVar(&cli.gw_ipver, "gw-ipver", 4, "IP version for the gateway (4 or 6)")
 	flag.StringVar(&cli.mapper_url, "m", "unix:///run/ipref/mapper.sock", "mapper url")
 	flag.IntVar(&cli.interval, "t", 59, "approximate transfer interval in minutes")
 	flag.BoolVar(&cli.stamps, "time-stamps", false, "print logs with time stamps")
@@ -84,6 +88,15 @@ func parse_cli(prog string) {
 		cli.interval = 10080 // one week
 	}
 	cli.poll_ivl = cli.interval * 60
+
+	// validate ip ver
+
+	if cli.ea_ipver != 4 && cli.ea_ipver != 6 {
+		log.Fatal("F invalid ea IP version: %v", cli.ea_ipver)
+	}
+	if cli.gw_ipver != 4 && cli.gw_ipver != 6 {
+		log.Fatal("F invalid gw IP version: %v", cli.gw_ipver)
+	}
 
 	// validate mapper url
 

@@ -4,7 +4,7 @@ package main
 
 import (
 	"errors"
-	"github.com/ipref/ref"
+	. "github.com/ipref/common"
 	"log"
 	"math/rand"
 	"net"
@@ -16,66 +16,12 @@ const (
 	MAXPKTLEN = 1200 // max size of packet payload
 )
 
-const ( // v1 constants
-
-	V1_SIG      = 0x11 // v1 signature
-	V1_HDR_LEN  = 8
-	V1_AREC_LEN = 4 + 4 + 4 + 8 + 8 // ea + ip + gw + ref.h + ref.l
-	// v1 header offsets
-	V1_VER      = 0
-	V1_CMD      = 1
-	V1_PKTID    = 2
-	V1_RESERVED = 4
-	V1_PKTLEN   = 6
-	// v1 arec offsets
-	V1_AREC_EA   = 0
-	V1_AREC_IP   = 4
-	V1_AREC_GW   = 8
-	V1_AREC_REFH = 12
-	V1_AREC_REFL = 20
-	// v1 host data offsets
-	V1_HOST_DATA_BATCHID = 0
-	V1_HOST_DATA_COUNT   = 0
-	V1_HOST_DATA_HASH    = 4
-	V1_HOST_DATA_SOURCE  = 12
-)
-
-const ( // v1 item types
-
-	//V1_TYPE_NONE   = 0
-	//V1_TYPE_AREC   = 1
-	//V1_TYPE_SOFT   = 2
-	//V1_TYPE_IPV4   = 3
-	V1_TYPE_STRING = 4
-)
-
-const ( // v1 commands
-
-	V1_NOOP              = 0
-	V1_MC_HOST_DATA      = 14
-	V1_MC_HOST_DATA_HASH = 15
-)
-
-const ( // v1 command mode, top two bits
-
-	V1_DATA = 0x00
-	V1_REQ  = 0x40
-	V1_ACK  = 0x80
-	V1_NACK = 0xC0
-)
-
-type AddrRec struct {
-	ip  IP32
-	gw  IP32
-	ref ref.Ref
-}
-
 type SendReq struct {
 	cmd     byte
 	source  string
 	qrmhash uint64
 	batch   uint32
-	recs    []AddrRec
+	recs    []AddrRec // .EA should be the zero address (same IP ver as .IP)
 }
 
 var sendreqq chan SendReq
@@ -84,7 +30,7 @@ var pktidq chan uint16
 func print_records(recs []AddrRec) {
 
 	for _, rec := range recs {
-		log.Printf(":   host: %v + %v  ->  %v", rec.gw, &rec.ref, rec.ip)
+		log.Printf(":   host: %v + %v  ->  %v", rec.GW, &rec.Ref, rec.IP)
 	}
 }
 
@@ -127,8 +73,8 @@ func packet_to_send(req SendReq) []byte {
 	pkt[V1_VER] = V1_SIG
 	pkt[V1_CMD] = req.cmd
 	be.PutUint16(pkt[V1_PKTID:V1_PKTID+2], <-pktidq)
+	pkt[V1_IPVER] = byte(cli.ea_ipver << 4) | byte(cli.gw_ipver)
 	pkt[V1_RESERVED] = 0
-	pkt[V1_RESERVED+1] = 0
 
 	off = V1_HDR_LEN
 
@@ -156,12 +102,11 @@ func packet_to_send(req SendReq) []byte {
 
 		for _, rec := range req.recs {
 
-			be.PutUint32(pkt[off+V1_AREC_EA:off+V1_AREC_EA+4], uint32(0))
-			be.PutUint32(pkt[off+V1_AREC_IP:off+V1_AREC_IP+4], uint32(rec.ip))
-			be.PutUint32(pkt[off+V1_AREC_GW:off+V1_AREC_GW+4], uint32(rec.gw))
-			be.PutUint64(pkt[off+V1_AREC_REFH:off+V1_AREC_REFH+8], uint64(rec.ref.H))
-			be.PutUint64(pkt[off+V1_AREC_REFL:off+V1_AREC_REFL+8], uint64(rec.ref.L))
-			off += V1_AREC_LEN
+			if rec.EA.Ver() != cli.ea_ipver || rec.GW.Ver() != cli.gw_ipver {
+				panic("unexpected")
+			}
+			rec.Encode(pkt[off:])
+			off += rec.EncodedLen()
 		}
 
 		// send the packet

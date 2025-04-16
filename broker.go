@@ -4,10 +4,9 @@ package main
 
 import (
 	"encoding/binary"
-	"github.com/ipref/ref"
+	. "github.com/ipref/common"
 	"log"
 	"math/rand"
-	"net"
 	"time"
 )
 
@@ -41,14 +40,6 @@ const (
 	DLY_EXPIRE = 293 * time.Second
 )
 
-type IP32 uint32 // ip address
-
-func (ip IP32) String() string {
-	addr := []byte{0, 0, 0, 0}
-	be.PutUint32(addr, uint32(ip))
-	return net.IP(addr).String()
-}
-
 type HostReq struct {
 	req     int
 	source  string
@@ -56,13 +47,8 @@ type HostReq struct {
 	qrmhash uint64
 }
 
-type IprefAddr struct {
-	gw  IP32
-	ref ref.Ref
-}
-
 type Host struct {
-	ip   IP32
+	ip   IP
 	name string
 }
 
@@ -74,8 +60,8 @@ type Status struct {
 type HostData struct {
 	source  string
 	qrmhash uint64 // quorum hash
-	hosts   map[IprefAddr]Host
-	stat    map[IprefAddr]Status
+	hosts   map[IpRef]Host
+	stat    map[IpRef]Status
 }
 
 type AggData struct { // data from all servers for a source
@@ -89,7 +75,7 @@ type SrvData struct { // data from a single server
 	source string
 	server string
 	hash   uint64
-	hosts  map[IprefAddr]Host
+	hosts  map[IpRef]Host
 }
 
 var be = binary.BigEndian
@@ -189,7 +175,7 @@ func send_host_data(source string) {
 	space -= 8                     // hash
 	space -= len(sreq.source) + 10 // source string plus possible padding
 
-	if space < V1_AREC_LEN {
+	if space < V1_AREC_MAX_LEN {
 		log.Printf("E cannot send host data to mapper: packet size too small")
 	}
 
@@ -209,9 +195,10 @@ func send_host_data(source string) {
 
 			hdata.stat[iraddr] = hs
 
-			sreq.recs = append(sreq.recs, AddrRec{host.ip, iraddr.gw, iraddr.ref})
+			arec := AddrRec{IPZero(host.ip.Len()), host.ip, iraddr.IP, iraddr.Ref}
+			sreq.recs = append(sreq.recs, arec)
 
-			if space -= V1_AREC_LEN; space < V1_AREC_LEN {
+			if space -= arec.EncodedLen(); space < arec.EncodedLen() {
 				break
 			}
 		}
@@ -283,7 +270,7 @@ func new_qrmdata(qdata SrvData) {
 	hdata.source = qdata.source
 	hdata.qrmhash = qdata.hash
 	hdata.hosts = qdata.hosts
-	hdata.stat = make(map[IprefAddr]Status)
+	hdata.stat = make(map[IpRef]Status)
 
 	// add host status
 
