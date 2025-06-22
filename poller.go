@@ -4,7 +4,6 @@ package main
 
 import (
 	. "github.com/ipref/common"
-	"github.com/ipref/ref"
 	"github.com/miekg/dns"
 	"hash/fnv"
 	"log"
@@ -166,7 +165,7 @@ poll_loop:
 
 					// get reference
 
-					ref, err := ref.Parse(addr[1])
+					ref, err := ParseRef(addr[1])
 					if err != nil {
 						log.Printf("E %v at %v invalid IPREF reference: %v %v, discarding", source, server, addr[1], err)
 						continue
