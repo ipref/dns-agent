@@ -134,11 +134,9 @@ func main() {
 		for source, servers := range sources {
 
 			offset := cli.poll_ivl / len(servers)
-			delay := rand.Intn(offset / 2)
 
 			for _, server := range servers {
-				go poll_a_source(source, server, time.Duration(delay)*time.Second, (offset*23)/100)
-				delay += offset
+				go poll_a_source(source, server, time.Duration(5)*time.Second, (offset*23)/100)
 			}
 		}
 
