@@ -37,7 +37,7 @@ const ( // host request codes
 
 const (
 	DLY_SEND   = 257 * time.Millisecond
-	DLY_EXPIRE = 293 * time.Second
+	DLY_EXPIRE = 5 * time.Second
 )
 
 type HostReq struct {
