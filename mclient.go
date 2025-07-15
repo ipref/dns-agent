@@ -364,7 +364,6 @@ func mclient_conn() {
 
 	// connect to mapper
 
-	reconn_dly := cli.poll_ivl / 7 // mean reconnect delay
 	reconnq := make(chan string)
 
 	for inst := uint(1); true; inst++ {
@@ -387,12 +386,12 @@ func mclient_conn() {
 			<-connerr // wait for error indications, then try to reconnect
 		}
 
-		go func(mean int) {
-			dly := time.Second * time.Duration((mean-mean/3)+rand.Intn((mean*2)/3))
+		go func() {
+			dly := time.Second * time.Duration(10)
 			log.Printf("I reconnecting in %v...", dly)
 			time.Sleep(dly)
 			reconnq <- "reconnect"
-		}(reconn_dly)
+		}()
 
 	drain:
 		for { // wait while draining sendreqq
